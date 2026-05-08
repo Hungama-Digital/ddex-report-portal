@@ -377,6 +377,40 @@ tr:hover td {
   background: var(--bg-secondary);
 }
 
+/* Dashboard Mode Toggle */
+.dashboard-toggle-wrapper {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+.dashboard-toggle {
+  display: inline-flex;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 4px;
+  gap: 4px;
+}
+.dashboard-toggle .toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+.dashboard-toggle .toggle-btn:hover {
+  color: var(--text-primary);
+}
+.dashboard-toggle .toggle-btn.active {
+  background: var(--accent-color);
+  color: white;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
 /* Charts */
 .dashboard-charts-grid {
   display: grid;

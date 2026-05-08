@@ -2,14 +2,25 @@ import React from 'react';
 import { Calendar, Building2 } from 'lucide-react';
 import { audioPartners, videoPartners } from '../data/mockData';
 
-const FilterBar = ({ selectedPartner, setSelectedPartner, startDate, setStartDate, endDate, setEndDate, activePage }) => {
-  const currentPartners = activePage === 'video-reports' ? videoPartners : audioPartners;
+const FilterBar = ({ selectedPartner, setSelectedPartner, startDate, setStartDate, endDate, setEndDate, activePage, dashboardMode }) => {
+  const currentPartners = activePage === 'video-reports' || dashboardMode === 'video'
+    ? videoPartners 
+    : activePage === 'audio-reports' || dashboardMode === 'audio'
+      ? audioPartners 
+      : [...audioPartners, ...videoPartners];
+
+  const partnerLabel = activePage === 'video-reports' || dashboardMode === 'video'
+    ? 'Select Video Partner' 
+    : activePage === 'audio-reports' || dashboardMode === 'audio'
+      ? 'Select Audio Partner' 
+      : 'Select Partner';
+
   return (
     <div className="filter-bar">
       <div className="filter-group">
         <label htmlFor="partner">
           <Building2 size={16} />
-          {activePage === 'video-reports' ? 'Select Video Partner' : 'Select Audio Partner'}
+          {partnerLabel}
         </label>
         <select 
           id="partner" 

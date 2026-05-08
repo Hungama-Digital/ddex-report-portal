@@ -15,6 +15,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('totalLive');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [activePage, setActivePage] = useState('dashboard');
+  const [dashboardMode, setDashboardMode] = useState('combined'); // 'combined', 'audio', 'video'
 
   // Apply theme class to body
   useEffect(() => {
@@ -86,6 +87,30 @@ function App() {
     };
   }, [selectedPartner, startDate, endDate]);
 
+  const totalDashboardStats = useMemo(() => {
+    return {
+      totalLive: dashboardStats.audio.totalLive + dashboardStats.video.totalLive,
+      deliveredThisMonth: dashboardStats.audio.deliveredThisMonth + dashboardStats.video.deliveredThisMonth,
+      takenDownThisMonth: dashboardStats.audio.takenDownThisMonth + dashboardStats.video.takenDownThisMonth
+    };
+  }, [dashboardStats]);
+
+  const recentDeliveries = useMemo(() => {
+    let combined = [];
+    if (dashboardMode === 'combined') {
+      combined = [...audioContents, ...videoContents];
+    } else if (dashboardMode === 'audio') {
+      combined = [...audioContents];
+    } else {
+      combined = [...videoContents];
+    }
+    // Filter out delivered ones
+    const delivered = combined.filter(item => item.deliveredThisMonth && item.status !== 'Taken Down');
+    // Sort by release date descending
+    delivered.sort((a, b) => new Date(b.releaseDate) - new Date(a.releaseDate));
+    return delivered.slice(0, 5);
+  }, [dashboardMode]);
+
   const tableContents = useMemo(() => {
     switch (activeTab) {
       case 'totalLive': return totalLiveArr;
@@ -123,9 +148,78 @@ function App() {
 
         {activePage === 'dashboard' ? (
           <div className="dashboard-content">
+            <FilterBar 
+              selectedPartner={selectedPartner}
+              setSelectedPartner={setSelectedPartner}
+              startDate={startDate}
+              setStartDate={setStartDate}
+              endDate={endDate}
+              setEndDate={setEndDate}
+              activePage={activePage}
+              dashboardMode={dashboardMode}
+            />
+
+            <div className="dashboard-toggle-wrapper">
+              <div className="dashboard-toggle">
+                <button 
+                  className={`toggle-btn ${dashboardMode === 'combined' ? 'active' : ''}`}
+                  onClick={() => setDashboardMode('combined')}
+                >
+                  Combined
+                </button>
+                <button 
+                  className={`toggle-btn ${dashboardMode === 'audio' ? 'active' : ''}`}
+                  onClick={() => setDashboardMode('audio')}
+                >
+                  Audio Only
+                </button>
+                <button 
+                  className={`toggle-btn ${dashboardMode === 'video' ? 'active' : ''}`}
+                  onClick={() => setDashboardMode('video')}
+                >
+                  Video Only
+                </button>
+              </div>
+            </div>
+
+            <SummaryCards 
+              dashboardStats={dashboardStats}
+              activeTab={activeTab} 
+              setActiveTab={() => {}} 
+              isDashboard={true}
+              dashboardMode={dashboardMode}
+            />
+
             <DashboardCharts 
               dashboardStats={dashboardStats} 
+              dashboardMode={dashboardMode}
             />
+
+            <div className="recent-deliveries-container">
+              <h3 className="section-title">Recent Deliveries</h3>
+              <div className="table-wrapper" style={{ marginTop: '1rem' }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Content ID</th>
+                      <th>Title</th>
+                      <th>Release Date</th>
+                      <th>Partner</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentDeliveries.map(item => (
+                      <tr key={item.id}>
+                        <td style={{fontWeight: 500}}>{item.id}</td>
+                        <td>{item.title}</td>
+                        <td>{item.releaseDate}</td>
+                        <td>{item.partner}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         ) : (activePage === 'audio-reports' || activePage === 'video-reports') ? (
           <div className="dashboard-content">

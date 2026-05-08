@@ -1,7 +1,8 @@
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } from 'recharts';
+import { Music, Video } from 'lucide-react';
 
-const DashboardCharts = ({ dashboardStats }) => {
+const DashboardCharts = ({ dashboardStats, dashboardMode }) => {
   const audioData = [
     { name: 'Live', value: dashboardStats?.audio?.totalLive || 0, color: 'var(--success-color)' },
     { name: 'Delivered', value: dashboardStats?.audio?.deliveredThisMonth || 0, color: 'var(--accent-color)' },
@@ -15,9 +16,12 @@ const DashboardCharts = ({ dashboardStats }) => {
   ];
 
   return (
-    <div className="dashboard-charts-grid">
-      <div className="charts-container">
-        <h3 className="chart-title">Audio Status Overview</h3>
+    <div className="dashboard-charts-grid" style={{ gridTemplateColumns: dashboardMode === 'combined' ? '' : '1fr' }}>
+      {(dashboardMode === 'combined' || dashboardMode === 'audio') && (
+        <div className="charts-container">
+        <h3 className="chart-title" style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+          <Music size={18} color="var(--accent-color)" /> Audio Status Overview
+        </h3>
         <div className="chart-wrapper">
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={audioData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
@@ -37,9 +41,13 @@ const DashboardCharts = ({ dashboardStats }) => {
           </ResponsiveContainer>
         </div>
       </div>
+      )}
 
+      {(dashboardMode === 'combined' || dashboardMode === 'video') && (
       <div className="charts-container">
-        <h3 className="chart-title">Video Status Overview</h3>
+        <h3 className="chart-title" style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+          <Video size={18} color="var(--accent-color)" /> Video Status Overview
+        </h3>
         <div className="chart-wrapper">
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={videoData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
@@ -59,6 +67,7 @@ const DashboardCharts = ({ dashboardStats }) => {
           </ResponsiveContainer>
         </div>
       </div>
+      )}
     </div>
   );
 };
