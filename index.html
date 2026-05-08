@@ -7,6 +7,14 @@
     <title>delivery-portal</title>
   </head>
   <body>
+    <script>
+      try {
+        var isDarkMode = window.localStorage.getItem('ddex_darkMode');
+        if (isDarkMode === 'false' || isDarkMode === null) {
+          document.body.classList.add('light-mode');
+        }
+      } catch (e) {}
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

@@ -8,14 +8,38 @@ import DashboardCharts from './components/DashboardCharts';
 import Sidebar from './components/Sidebar';
 import { Sun, Moon } from 'lucide-react';
 
+function useLocalStorage(key, initialValue) {
+  const [storedValue, setStoredValue] = useState(() => {
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : initialValue;
+    } catch (error) {
+      console.error(error);
+      return initialValue;
+    }
+  });
+
+  const setValue = (value) => {
+    try {
+      const valueToStore = value instanceof Function ? value(storedValue) : value;
+      setStoredValue(valueToStore);
+      window.localStorage.setItem(key, JSON.stringify(valueToStore));
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  return [storedValue, setValue];
+}
+
 function App() {
-  const [selectedPartner, setSelectedPartner] = useState('all');
-  const [startDate, setStartDate] = useState('2026-05-01');
-  const [endDate, setEndDate] = useState('2026-05-31');
-  const [activeTab, setActiveTab] = useState('totalLive');
-  const [isDarkMode, setIsDarkMode] = useState(false);
-  const [activePage, setActivePage] = useState('dashboard');
-  const [dashboardMode, setDashboardMode] = useState('combined'); // 'combined', 'audio', 'video'
+  const [selectedPartner, setSelectedPartner] = useLocalStorage('ddex_partner', 'all');
+  const [startDate, setStartDate] = useLocalStorage('ddex_startDate', '2026-05-01');
+  const [endDate, setEndDate] = useLocalStorage('ddex_endDate', '2026-05-31');
+  const [activeTab, setActiveTab] = useLocalStorage('ddex_activeTab', 'totalLive');
+  const [isDarkMode, setIsDarkMode] = useLocalStorage('ddex_darkMode', false);
+  const [activePage, setActivePage] = useLocalStorage('ddex_activePage', 'dashboard');
+  const [dashboardMode, setDashboardMode] = useLocalStorage('ddex_dashboardMode', 'combined');
 
   // Apply theme class to body
   useEffect(() => {
