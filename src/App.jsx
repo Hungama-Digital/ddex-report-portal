@@ -6,8 +6,14 @@ import SummaryCards from './components/SummaryCards';
 import ContentTable from './components/ContentTable';
 import DashboardCharts from './components/DashboardCharts';
 import Sidebar from './components/Sidebar';
-import { Sun, Moon } from 'lucide-react';
-import { fetchAudioPartnerSummary, fetchAudioRecentDeliveries } from './services/metricsApi';
+import { Sun, Moon, Search } from 'lucide-react';
+import {
+  fetchAudioDetailsRows,
+  fetchAudioPartnerSummary,
+  fetchAudioPartnerTotalContentLive,
+  fetchAudioRecentDeliveries,
+  isValidDateInput,
+} from './services/metricsApi';
 import { getPartnerDisplayName } from './utils/partnerDisplay';
 
 const EMPTY_AUDIO_SUMMARY = {
@@ -24,6 +30,13 @@ const EMPTY_AUDIO_SUMMARY = {
 const EMPTY_RECENT_DELIVERIES = {
   queryKey: null,
   status: 'idle', // idle | success | error
+  error: null,
+  rows: [],
+};
+
+const EMPTY_AUDIO_DETAILS_ROWS = {
+  queryKey: null,
+  status: 'idle',
   error: null,
   rows: [],
 };
@@ -64,6 +77,10 @@ function App() {
   const [recentDeliveriesState, setRecentDeliveriesState] = useState(
     EMPTY_RECENT_DELIVERIES,
   );
+  const [audioDetailsRowsState, setAudioDetailsRowsState] = useState(
+    EMPTY_AUDIO_DETAILS_ROWS,
+  );
+  const [dashboardRecentSearchTerm, setDashboardRecentSearchTerm] = useState('');
 
   const audioPartnerIdSet = useMemo(
     () => new Set(audioPartners.map((partner) => partner.id)),
@@ -78,6 +95,10 @@ function App() {
     (activePage === 'audio-reports' ||
       (activePage === 'dashboard' && dashboardMode !== 'video')) &&
     isAudioSelectionSupported;
+  const hasValidDateRange =
+    isValidDateInput(startDate) &&
+    isValidDateInput(endDate) &&
+    new Date(`${startDate}T00:00:00Z`) <= new Date(`${endDate}T00:00:00Z`);
 
   const recentDeliveriesPartner = useMemo(() => {
     if (dashboardMode === 'video') {
@@ -107,7 +128,7 @@ function App() {
       return null;
     }
 
-    return `${recentDeliveriesPartner}|${startDate}|${endDate}|10`;
+    return `${recentDeliveriesPartner}|${startDate}|${endDate}|20`;
   }, [recentDeliveriesPartner, startDate, endDate]);
 
   const isAudioSummaryLoading =
@@ -155,15 +176,20 @@ function App() {
       error: null,
     }));
 
-    const summaryPromise = isAllAudioPartnersSelected
+    const allPartnersPromise = isAllAudioPartnersSelected
       ? Promise.all(
           audioPartners.map((partner) =>
-            fetchAudioPartnerSummary({
-              partner: partner.id,
-              startDate,
-              endDate,
-              signal: abortController.signal,
-            }),
+            hasValidDateRange
+              ? fetchAudioPartnerSummary({
+                  partner: partner.id,
+                  startDate,
+                  endDate,
+                  signal: abortController.signal,
+                })
+              : fetchAudioPartnerTotalContentLive({
+                  partner: partner.id,
+                  signal: abortController.signal,
+                }),
           ),
         ).then((responses) => {
           const summaries = responses.filter(Boolean);
@@ -186,14 +212,23 @@ function App() {
             },
           );
         })
-      : fetchAudioPartnerSummary({
-          partner: selectedPartner,
-          startDate,
-          endDate,
-          signal: abortController.signal,
-        });
+      : hasValidDateRange
+        ? fetchAudioPartnerSummary({
+            partner: selectedPartner,
+            startDate,
+            endDate,
+            signal: abortController.signal,
+          })
+        : fetchAudioPartnerTotalContentLive({
+            partner: selectedPartner,
+            signal: abortController.signal,
+          }).then((item) => ({
+            ...item,
+            deliveredInPeriod: 0,
+            takenDownInPeriod: 0,
+          }));
 
-    summaryPromise
+    allPartnersPromise
       .then((response) => {
         if (abortController.signal.aborted) {
           return;
@@ -233,6 +268,7 @@ function App() {
     startDate,
     endDate,
     isAllAudioPartnersSelected,
+    hasValidDateRange,
   ]);
 
   const { totalLiveArr, deliveredArr, takenDownArr } = useMemo(() => {
@@ -270,6 +306,15 @@ function App() {
     if (!currentRecentDeliveriesKey || !recentDeliveriesPartner) {
       return;
     }
+    if (!hasValidDateRange) {
+      setRecentDeliveriesState({
+        queryKey: currentRecentDeliveriesKey,
+        status: 'success',
+        error: null,
+        rows: [],
+      });
+      return;
+    }
 
     const abortController = new AbortController();
     setRecentDeliveriesState((previous) => ({
@@ -284,7 +329,7 @@ function App() {
       partner: recentDeliveriesPartner,
       startDate,
       endDate,
-      limit: 10,
+      limit: 20,
       signal: abortController.signal,
     })
       .then((response) => {
@@ -315,7 +360,105 @@ function App() {
     return () => {
       abortController.abort();
     };
-  }, [currentRecentDeliveriesKey, recentDeliveriesPartner, startDate, endDate]);
+  }, [currentRecentDeliveriesKey, recentDeliveriesPartner, startDate, endDate, hasValidDateRange]);
+
+  const currentAudioDetailsKey = useMemo(() => {
+    if (activePage !== 'audio-reports' || !isAudioSelectionSupported) {
+      return null;
+    }
+    return `${selectedPartner}|${activeTab}|${startDate}|${endDate}|audio-details`;
+  }, [activePage, isAudioSelectionSupported, selectedPartner, activeTab, startDate, endDate]);
+
+  const detailsLimit = useMemo(() => {
+    const byTab = {
+      totalLive: Number(audioSummary.partnerDb) || 0,
+      deliveredThisMonth: Number(audioSummary.deliveredInPeriod) || 0,
+      takenDownThisMonth: Number(audioSummary.takenDownInPeriod) || 0,
+    };
+    const raw = byTab[activeTab] || 0;
+    const withBuffer = raw > 0 ? raw + 500 : 10000;
+    return Math.max(10000, Math.min(withBuffer, 300000));
+  }, [
+    activeTab,
+    audioSummary.partnerDb,
+    audioSummary.deliveredInPeriod,
+    audioSummary.takenDownInPeriod,
+  ]);
+
+  useEffect(() => {
+    if (!currentAudioDetailsKey) {
+      return;
+    }
+
+    const detailTypeByTab = {
+      totalLive: 'live',
+      deliveredThisMonth: 'delivered',
+      takenDownThisMonth: 'takedown',
+    };
+    const detailType = detailTypeByTab[activeTab] || 'live';
+    if (detailType !== 'live' && !hasValidDateRange) {
+      setAudioDetailsRowsState({
+        queryKey: currentAudioDetailsKey,
+        status: 'success',
+        error: null,
+        rows: [],
+      });
+      return;
+    }
+
+    const abortController = new AbortController();
+    setAudioDetailsRowsState({
+      queryKey: currentAudioDetailsKey,
+      status: 'loading',
+      error: null,
+      rows: [],
+    });
+
+    fetchAudioDetailsRows({
+      partner: selectedPartner,
+      type: detailType,
+      startDate,
+      endDate,
+      limit: detailsLimit,
+      signal: abortController.signal,
+    })
+      .then((response) => {
+        if (abortController.signal.aborted) {
+          return;
+        }
+
+        setAudioDetailsRowsState({
+          queryKey: currentAudioDetailsKey,
+          status: 'success',
+          error: null,
+          rows: response.rows,
+        });
+      })
+      .catch((error) => {
+        if (abortController.signal.aborted || error?.name === 'AbortError') {
+          return;
+        }
+
+        setAudioDetailsRowsState({
+          queryKey: currentAudioDetailsKey,
+          status: 'error',
+          error: error?.message || 'Unable to load detailed rows.',
+          rows: [],
+        });
+      });
+
+    return () => {
+      abortController.abort();
+    };
+  }, [
+    activeTab,
+    selectedPartner,
+    startDate,
+    endDate,
+    currentAudioDetailsKey,
+    hasValidDateRange,
+    detailsLimit,
+  ]);
 
   const stats = {
     totalLive: shouldUseDbMetricsForAudio ? audioSummary.total : 0,
@@ -360,35 +503,6 @@ function App() {
     audioSummary.takenDownInPeriod,
   ]);
 
-  const mockRecentDeliveries = useMemo(() => {
-    const combined =
-      dashboardMode === 'combined'
-        ? [...audioContents, ...videoContents]
-        : dashboardMode === 'audio'
-          ? [...audioContents]
-          : [...videoContents];
-
-    const filteredByPartner =
-      selectedPartner === 'all'
-        ? combined
-        : combined.filter((item) => item.partner === selectedPartner);
-
-    const delivered = filteredByPartner.filter(
-      (item) => item.deliveredThisMonth && item.status !== 'Taken Down',
-    );
-    delivered.sort((a, b) => new Date(b.releaseDate) - new Date(a.releaseDate));
-    return delivered.slice(0, 10).map((item) => ({
-      id: item.id,
-      partner: item.partner,
-      albumId: item.albumId || item.id,
-      batchId: '-',
-      ddexType: item.status === 'Delivered' ? 'AUDIO_ALBUM_INSERT' : item.status,
-      addedOn: `${item.releaseDate} 00:00:00`,
-      updatedOn: '',
-      trackCount: 0,
-    }));
-  }, [dashboardMode, selectedPartner]);
-
   const shouldUseLiveRecentDeliveries =
     dashboardMode !== 'video' &&
     Boolean(currentRecentDeliveriesKey) &&
@@ -411,9 +525,41 @@ function App() {
 
   const recentDeliveries = shouldUseLiveRecentDeliveries
     ? recentDeliveriesState.rows
-    : mockRecentDeliveries;
+    : [];
+
+  const dashboardRecentRows = useMemo(() => {
+    const search = dashboardRecentSearchTerm.trim().toLowerCase();
+    if (!search) {
+      return recentDeliveries;
+    }
+    return recentDeliveries.filter((item) =>
+      [
+        item.albumId,
+        item.albumName,
+        item.upc,
+        item.addedOn,
+        item.updatedOn,
+        item.batchId,
+        item.trackIdsCsv,
+        String(item.trackCount || 0),
+      ]
+        .join(' ')
+        .toLowerCase()
+        .includes(search),
+    );
+  }, [recentDeliveries, dashboardRecentSearchTerm]);
 
   const tableContents = useMemo(() => {
+    if (activePage === 'audio-reports') {
+      if (
+        audioDetailsRowsState.queryKey === currentAudioDetailsKey &&
+        audioDetailsRowsState.status === 'success'
+      ) {
+        return audioDetailsRowsState.rows;
+      }
+      return [];
+    }
+
     switch (activeTab) {
       case 'totalLive':
         return totalLiveArr;
@@ -424,7 +570,38 @@ function App() {
       default:
         return totalLiveArr;
     }
-  }, [activeTab, totalLiveArr, deliveredArr, takenDownArr]);
+  }, [
+    activePage,
+    activeTab,
+    totalLiveArr,
+    deliveredArr,
+    takenDownArr,
+    audioDetailsRowsState.queryKey,
+    audioDetailsRowsState.status,
+    audioDetailsRowsState.rows,
+    currentAudioDetailsKey,
+  ]);
+
+  const audioDetailsLoading =
+    activePage === 'audio-reports' &&
+    Boolean(currentAudioDetailsKey) &&
+    audioDetailsRowsState.queryKey === currentAudioDetailsKey &&
+    audioDetailsRowsState.status === 'loading';
+
+  const audioDetailsError =
+    activePage === 'audio-reports' &&
+    Boolean(currentAudioDetailsKey) &&
+    audioDetailsRowsState.queryKey === currentAudioDetailsKey &&
+    audioDetailsRowsState.status === 'error'
+      ? audioDetailsRowsState.error
+      : null;
+
+  const reportPartnerLabel = useMemo(() => {
+    if (selectedPartner === 'all') {
+      return 'All Partners';
+    }
+    return getPartnerDisplayName(selectedPartner);
+  }, [selectedPartner]);
 
   const shouldShowAudioMetricsLoading =
     Boolean(currentAudioSummaryKey) &&
@@ -526,16 +703,27 @@ function App() {
 
             <div className="recent-deliveries-container">
               <h3 className="section-title">Recent Deliveries</h3>
+              <div className="table-actions" style={{ justifyContent: 'flex-end', marginTop: '0.6rem' }}>
+                <div className="search-bar">
+                  <Search size={16} className="search-icon" />
+                  <input
+                    type="text"
+                    placeholder="Search album, UPC, batch, tracks..."
+                    value={dashboardRecentSearchTerm}
+                    onChange={(event) => setDashboardRecentSearchTerm(event.target.value)}
+                  />
+                </div>
+              </div>
               <div className="table-wrapper" style={{ marginTop: '1rem' }}>
                 <table>
                   <thead>
                     <tr>
-                      <th>Partner</th>
                       <th>Album ID</th>
-                      <th>Delivery Type</th>
+                      <th>Album Name</th>
+                      <th>UPC</th>
                       <th>Added On</th>
                       <th>Batch ID</th>
-                      <th>Tracks</th>
+                      <th>Track IDs</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -551,21 +739,25 @@ function App() {
                           {recentDeliveriesError}
                         </td>
                       </tr>
-                    ) : recentDeliveries.length === 0 ? (
+                    ) : dashboardRecentRows.length === 0 ? (
                       <tr>
                         <td colSpan={6} style={{ textAlign: 'center', padding: '1rem' }}>
                           No deliveries found for selected filters.
                         </td>
                       </tr>
                     ) : (
-                      recentDeliveries.map((item) => (
+                      dashboardRecentRows.map((item) => (
                         <tr key={item.id}>
-                          <td>{getPartnerDisplayName(item.partner)}</td>
                           <td style={{ fontWeight: 500 }}>{item.albumId || '-'}</td>
-                          <td>{item.ddexType || '-'}</td>
+                          <td>{item.albumName || '-'}</td>
+                          <td>{item.upc || '-'}</td>
                           <td>{item.addedOn || '-'}</td>
                           <td>{item.batchId || '-'}</td>
-                          <td>{item.trackCount || 0}</td>
+                          <td>
+                            <div className="track-ids-cell" title={item.trackIdsCsv || '-'}>
+                              {item.trackIdsCsv || '-'}
+                            </div>
+                          </td>
                         </tr>
                       ))
                     )}
@@ -601,6 +793,9 @@ function App() {
               activeTab={activeTab}
               filteredContents={tableContents}
               activePage={activePage}
+              tableLoading={audioDetailsLoading}
+              tableError={audioDetailsError}
+              reportPartnerLabel={reportPartnerLabel}
             />
           </div>
         ) : (

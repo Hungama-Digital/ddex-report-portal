@@ -9,6 +9,7 @@ import {
 import { checkB2BConnection, checkMetaseaConnection, closePools } from "./db.js";
 import { logDebug, logError, logInfo } from "./logger.js";
 import {
+  getAudioDetailsRows,
   getAudioRecentDeliveries,
   getAudioPartnerSummary,
   getAudioPartnerTotalContentLive,
@@ -136,6 +137,26 @@ app.get("/api/audio/partners/:partner/recent-deliveries", async (req, res, next)
     });
 
     res.json(recentDeliveries);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/audio/partners/:partner/details", async (req, res, next) => {
+  try {
+    const details = await getAudioDetailsRows({
+      partner: req.params.partner,
+      type: req.query.type,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+      limit: req.query.limit,
+      bypassCache:
+        req.query.refresh === "1" ||
+        req.query.noCache === "1" ||
+        req.query.nocache === "1",
+    });
+
+    res.json(details);
   } catch (error) {
     next(error);
   }

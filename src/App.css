@@ -380,7 +380,7 @@ body {
 }
 
 .summary-card--live .card-value {
-  min-height: 110px;
+  min-height: 92px;
 }
 
 .source-split-panel {
@@ -457,6 +457,12 @@ body {
   font-weight: 600;
 }
 
+.source-caption-value {
+  font-size: 0.84rem;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
 .period-mini-chart {
   border: 1px solid var(--border-color);
   border-radius: 12px;
@@ -508,6 +514,8 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
   padding: 1.5rem;
   border-bottom: 1px solid var(--border-color);
   background: rgba(255, 255, 255, 0.02);
@@ -544,6 +552,16 @@ td {
   font-size: 0.8rem;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-primary);
+}
+
+.track-ids-cell {
+  max-height: 72px;
+  overflow-y: auto;
+  white-space: normal;
+  word-break: break-all;
+  line-height: 1.3;
+  min-width: 260px;
+  padding-right: 4px;
 }
 
 tr:last-child td {
@@ -683,6 +701,9 @@ tr:hover td {
   display: flex;
   gap: 1rem;
   align-items: center;
+  margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .search-bar {
   display: flex;
@@ -725,8 +746,9 @@ tr:hover td {
 /* Pagination */
 .pagination {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
+  gap: 0.35rem;
   padding: 1rem 1.5rem;
   border-top: 1px solid var(--border-color);
   background: rgba(255, 255, 255, 0.02);
@@ -736,10 +758,35 @@ tr:hover td {
   border: 1px solid var(--border-color);
   color: var(--text-primary);
   border-radius: 8px;
-  padding: 0.5rem;
+  padding: 0.38rem 0.52rem;
   cursor: pointer;
   display: flex;
   align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 32px;
+}
+.page-number {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.page-number.active {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+  color: #fff;
+}
+.pagination-ellipsis {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  padding: 0 0.25rem;
+}
+.pagination-inline {
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+.pagination-bottom-right {
+  justify-content: flex-end;
 }
 .pagination button:disabled {
   opacity: 0.5;

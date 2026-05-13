@@ -52,6 +52,8 @@ const SummaryCards = ({
   const liveTotal = liveBreakdown?.isLiveData
     ? (Number(liveBreakdown.metasea) || 0) + (Number(liveBreakdown.partnerDb) || 0)
     : totalLiveCount;
+  const liveMetaseaCount = Number(liveBreakdown?.metasea) || 0;
+  const livePartnerDbCount = Number(liveBreakdown?.partnerDb) || 0;
   const metaseaPct = liveTotal > 0 ? Math.round(((Number(liveBreakdown?.metasea) || 0) / liveTotal) * 100) : 0;
   const partnerDbPct = liveTotal > 0 ? 100 - metaseaPct : 0;
 
@@ -81,31 +83,8 @@ const SummaryCards = ({
     if (metricsLoading) {
       return renderLoadingValue();
     }
-    if (liveBreakdown?.isLiveData) {
-      return (
-        <div className="source-split-panel">
-          <div className="source-split-grid">
-            <div className="source-split-block source-split-block--metasea">
-              <span className="source-label">Metasea</span>
-              <span className="source-value">{formatCount(liveBreakdown.metasea)}</span>
-            </div>
-            <div className="source-split-block source-split-block--partner">
-              <span className="source-label">Partner DB</span>
-              <span className="source-value">{formatCount(liveBreakdown.partnerDb)}</span>
-            </div>
-          </div>
-          <div className="source-share-track" aria-hidden="true">
-            <span className="source-share-fill source-share-fill--metasea" style={{ width: `${metaseaPct}%` }} />
-            <span className="source-share-fill source-share-fill--partner" style={{ width: `${partnerDbPct}%` }} />
-          </div>
-          <div className="source-share-meta">
-            <span>Metasea {metaseaPct}%</span>
-            <span>Partner DB {partnerDbPct}%</span>
-          </div>
-        </div>
-      );
-    }
-    return <span className="metric-value-large">{formatCount(totalLiveCount)}</span>;
+    const displayValue = liveBreakdown?.isLiveData ? liveTotal : totalLiveCount;
+    return <span className="metric-value-large">{formatCount(displayValue)}</span>;
   };
 
   const renderValue = (key) => {
@@ -165,6 +144,90 @@ const SummaryCards = ({
     );
   };
 
+  const renderLiveMiniChart = () => {
+    if (metricsLoading || metricsError || !liveBreakdown?.isLiveData) {
+      return null;
+    }
+
+    const buildSeries = (count) => {
+      const normalizedCount = Number(count) || 0;
+      return [
+        { index: 0, value: 0 },
+        { index: 1, value: Math.round(normalizedCount * 0.28) },
+        { index: 2, value: Math.round(normalizedCount * 0.58) },
+        { index: 3, value: Math.round(normalizedCount * 0.82) },
+        { index: 4, value: normalizedCount },
+      ];
+    };
+
+    const metaseaSeries = buildSeries(liveMetaseaCount);
+    const partnerSeries = buildSeries(livePartnerDbCount);
+
+    return (
+      <div className="period-mini-chart period-mini-chart--line">
+        <div className="period-sparkline">
+          <div className="period-sparkline-block">
+            <span className="period-sparkline-label">
+              Metasea ({metaseaPct}%)
+            </span>
+            <div className="period-sparkline-canvas">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={metaseaSeries}>
+                  <defs>
+                    <linearGradient id="sparkMetaseaLive" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.5} />
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0.05} />
+                    </linearGradient>
+                  </defs>
+                  <Area
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#10b981"
+                    strokeWidth={2}
+                    fill="url(#sparkMetaseaLive)"
+                    dot={false}
+                    activeDot={false}
+                    isAnimationActive={false}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            <span className="source-caption-value">{formatCount(liveMetaseaCount)}</span>
+          </div>
+
+          <div className="period-sparkline-block">
+            <span className="period-sparkline-label">
+              Partner DB ({partnerDbPct}%)
+            </span>
+            <div className="period-sparkline-canvas">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={partnerSeries}>
+                  <defs>
+                    <linearGradient id="sparkPartnerLive" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.5} />
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.05} />
+                    </linearGradient>
+                  </defs>
+                  <Area
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#3b82f6"
+                    strokeWidth={2}
+                    fill="url(#sparkPartnerLive)"
+                    dot={false}
+                    activeDot={false}
+                    isAnimationActive={false}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            <span className="source-caption-value">{formatCount(livePartnerDbCount)}</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const cards = [
     {
       id: 'totalLive',
@@ -173,6 +236,7 @@ const SummaryCards = ({
       icon: <Activity size={24} />,
       subtitle: getLiveSubtitle(),
       kind: 'live',
+      footerChart: renderLiveMiniChart(),
     },
     {
       id: 'deliveredThisMonth',

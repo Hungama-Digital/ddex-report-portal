@@ -39,6 +39,9 @@ const audioSummaryCache = new Map();
 const inflightAudioSummary = new Map();
 const audioRecentDeliveriesCache = new Map();
 const inflightAudioRecentDeliveries = new Map();
+const audioDetailsRowsCache = new Map();
+const inflightAudioDetailsRows = new Map();
+const albumMetadataCache = new Map();
 
 function escapeMysqlIdentifier(identifier) {
   return identifier
@@ -80,6 +83,22 @@ function parsePositiveInteger(value, fallback, { min = 1, max = 1000 } = {}) {
   }
 
   return parsed;
+}
+
+function parseReportType(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (
+    normalized !== "live" &&
+    normalized !== "delivered" &&
+    normalized !== "takedown"
+  ) {
+    const error = new Error(
+      "type must be one of: live, delivered, takedown.",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+  return normalized;
 }
 
 function toYmd(date) {
@@ -163,6 +182,122 @@ function resolveRecentDeliveriesPartners(rawPartner) {
   }
 
   return [resolvePartnerConfiguration(partnerKey).partnerKey];
+}
+
+function extractNumericTrackIds(trackIdsJson) {
+  if (!trackIdsJson || typeof trackIdsJson !== "string") {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(trackIdsJson);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return [];
+    }
+
+    return Object.keys(parsed)
+      .filter((key) => /^[0-9]+$/.test(key))
+      .sort((left, right) => Number(left) - Number(right));
+  } catch (_error) {
+    return [];
+  }
+}
+
+function mapRowWithTrackIds(row, partnerKey) {
+  const trackIds = extractNumericTrackIds(String(row.trackIdsJson || ""));
+  return {
+    partner: String(row.partnerKey || partnerKey),
+    albumId:
+      row.albumId === null || row.albumId === undefined ? "" : String(row.albumId),
+    batchId:
+      row.batchId === null || row.batchId === undefined ? "" : String(row.batchId),
+    ddexType: String(row.ddexType || ""),
+    addedOn: String(row.addedOn || ""),
+    updatedOn: String(row.updatedOn || ""),
+    trackCount: trackIds.length,
+    trackIdsCsv: trackIds.join(", "),
+    albumName: "",
+    upc: "",
+  };
+}
+
+async function queryAlbumMetadataMap(albumIds) {
+  const normalizedIds = Array.from(
+    new Set(
+      (albumIds || [])
+        .map((id) => String(id || "").trim())
+        .filter((id) => /^\d+$/.test(id)),
+    ),
+  );
+
+  const missingIds = normalizedIds.filter((id) => !albumMetadataCache.has(id));
+  if (missingIds.length) {
+    const metaseaPool = getMetaseaPool();
+    const chunkSize = 1000;
+    for (let index = 0; index < missingIds.length; index += chunkSize) {
+      const chunk = missingIds.slice(index, index + chunkSize);
+      const chunkNumbers = chunk.map((id) => Number(id));
+      const sql = `
+        SELECT
+          td.content_id::text AS album_id,
+          COALESCE(ts.content_title, '') AS album_name,
+          COALESCE(td.content_code, '') AS upc
+        FROM mvcms.tbl_contents td
+        LEFT JOIN mvcms.tbl_content_details ts
+          ON ts.content_id = td.content_id
+         AND ts.language_id = 'eng'
+        WHERE td.content_id = ANY($1::bigint[])
+      `;
+      const result = await metaseaPool.query(sql, [chunkNumbers]);
+      const found = new Set();
+      for (const row of result.rows || []) {
+        const key = String(row.album_id || "");
+        if (!key) {
+          continue;
+        }
+        albumMetadataCache.set(key, {
+          albumName: String(row.album_name || ""),
+          upc: String(row.upc || ""),
+        });
+        found.add(key);
+      }
+      for (const id of chunk) {
+        if (!found.has(id)) {
+          albumMetadataCache.set(id, { albumName: "", upc: "" });
+        }
+      }
+    }
+  }
+
+  const output = new Map();
+  for (const id of normalizedIds) {
+    output.set(id, albumMetadataCache.get(id) || { albumName: "", upc: "" });
+  }
+  return output;
+}
+
+async function enrichRowsWithAlbumMetadata(rows) {
+  if (!rows?.length) {
+    return rows || [];
+  }
+  const albumIds = rows
+    .map((row) => String(row.albumId || "").trim())
+    .filter(Boolean);
+  if (!albumIds.length) {
+    return rows;
+  }
+  const metadataMap = await queryAlbumMetadataMap(albumIds);
+  return rows.map((row) => {
+    const meta = metadataMap.get(String(row.albumId || "").trim()) || {
+      albumName: "",
+      upc: "",
+    };
+    return {
+      ...row,
+      albumName: meta.albumName,
+      upc: meta.upc,
+    };
+  });
 }
 
 async function queryMetaseaTotalTracks(retailerId) {
@@ -548,7 +683,7 @@ async function queryPartnerDbRecentDeliveriesRows({
       d.DDEX_TYPE AS ddexType,
       DATE_FORMAT(d.ADDED_ON, '%Y-%m-%d %H:%i:%s') AS addedOn,
       DATE_FORMAT(d.UPDATED_ON, '%Y-%m-%d %H:%i:%s') AS updatedOn,
-      JSON_LENGTH(d.TRACK_IDS) AS trackCount
+      d.TRACK_IDS AS trackIdsJson
     FROM (
       /*
         Latest UPDATE per album (in range), only for albums that had INSERT in range
@@ -714,15 +849,7 @@ async function queryPartnerDbRecentDeliveriesRows({
 
   const b2bPool = getB2BPool();
   const [rows] = await b2bPool.query(sql, params);
-  const deliveries = (rows || []).map((row) => ({
-    partner: String(row.partnerKey || partnerKey),
-    albumId: row.albumId === null || row.albumId === undefined ? "" : String(row.albumId),
-    batchId: row.batchId === null || row.batchId === undefined ? "" : String(row.batchId),
-    ddexType: String(row.ddexType || ""),
-    addedOn: String(row.addedOn || ""),
-    updatedOn: String(row.updatedOn || ""),
-    trackCount: Number(row.trackCount) || 0,
-  }));
+  const deliveries = (rows || []).map((row) => mapRowWithTrackIds(row, partnerKey));
 
   logDebug("Partner-db recent-deliveries query completed", {
     partner: partnerKey,
@@ -731,6 +858,197 @@ async function queryPartnerDbRecentDeliveriesRows({
     durationMs: Date.now() - startedAt,
   });
 
+  return deliveries;
+}
+
+async function queryPartnerDbLiveRows({ partnerKey, tables, limit }) {
+  const startedAt = Date.now();
+  const contentsTable = escapeMysqlIdentifier(tables.contents);
+  const pushTable = escapeMysqlIdentifier(tables.push);
+  logDebug("Running partner-db live-rows query", {
+    partner: partnerKey,
+    contentsTable: tables.contents,
+    pushTable: tables.push,
+    limit,
+  });
+
+  const sql = `
+    SELECT
+      ? AS partnerKey,
+      d.ALBUM_ID AS albumId,
+      d.BATCH_ID AS batchId,
+      d.DDEX_TYPE AS ddexType,
+      DATE_FORMAT(d.ADDED_ON, '%Y-%m-%d %H:%i:%s') AS addedOn,
+      DATE_FORMAT(d.UPDATED_ON, '%Y-%m-%d %H:%i:%s') AS updatedOn,
+      d.TRACK_IDS AS trackIdsJson
+    FROM (
+      SELECT c.ALBUM_ID, c.BATCH_ID, c.DDEX_TYPE, c.ADDED_ON, c.UPDATED_ON, c.TRACK_IDS
+      FROM ${contentsTable} c
+      INNER JOIN ${pushTable} p
+          ON p.BATCH_ID = c.BATCH_ID
+         AND p.STATUS = 1
+      INNER JOIN (
+          SELECT l.ALBUM_ID,
+                 MAX(
+                   CONCAT(
+                     COALESCE(
+                       DATE_FORMAT(l.ADDED_ON, '%Y-%m-%d %H:%i:%s'),
+                       '0000-00-00 00:00:00'
+                     ),
+                     '|',
+                     COALESCE(
+                       DATE_FORMAT(l.UPDATED_ON, '%Y-%m-%d %H:%i:%s'),
+                       '0000-00-00 00:00:00'
+                     ),
+                     '|',
+                     COALESCE(LPAD(l.BATCH_ID, 64, '0'), '0')
+                   )
+                 ) AS latest_key
+          FROM ${contentsTable} l
+          WHERE l.DDEX_TYPE IN ('AUDIO_ALBUM_INSERT', 'AUDIO_ALBUM_UPDATE', 'AUDIO_ALBUM_TAKEDOWN')
+            AND l.STATUS = 1
+          GROUP BY l.ALBUM_ID
+      ) latest
+         ON latest.ALBUM_ID = c.ALBUM_ID
+        AND latest.latest_key = CONCAT(
+              COALESCE(
+                DATE_FORMAT(c.ADDED_ON, '%Y-%m-%d %H:%i:%s'),
+                '0000-00-00 00:00:00'
+              ),
+              '|',
+              COALESCE(
+                DATE_FORMAT(c.UPDATED_ON, '%Y-%m-%d %H:%i:%s'),
+                '0000-00-00 00:00:00'
+              ),
+              '|',
+              COALESCE(LPAD(c.BATCH_ID, 64, '0'), '0')
+            )
+      WHERE c.DDEX_TYPE IN ('AUDIO_ALBUM_INSERT', 'AUDIO_ALBUM_UPDATE')
+        AND c.STATUS = 1
+        AND c.TRACK_IDS IS NOT NULL
+        AND c.TRACK_IDS != ''
+        AND JSON_VALID(c.TRACK_IDS) = 1
+    ) d
+    ORDER BY d.ADDED_ON DESC, d.UPDATED_ON DESC, d.BATCH_ID DESC
+    LIMIT ?;
+  `;
+
+  const b2bPool = getB2BPool();
+  const [rows] = await b2bPool.query(sql, [partnerKey, limit]);
+  const deliveries = (rows || []).map((row) => mapRowWithTrackIds(row, partnerKey));
+  logDebug("Partner-db live-rows query completed", {
+    partner: partnerKey,
+    contentsTable: tables.contents,
+    returnedRows: deliveries.length,
+    durationMs: Date.now() - startedAt,
+  });
+  return deliveries;
+}
+
+async function queryPartnerDbTakenDownRows({
+  partnerKey,
+  tables,
+  bounds,
+  limit,
+}) {
+  const startedAt = Date.now();
+  const contentsTable = escapeMysqlIdentifier(tables.contents);
+  const pushTable = escapeMysqlIdentifier(tables.push);
+  logDebug("Running partner-db takedown-rows query", {
+    partner: partnerKey,
+    contentsTable: tables.contents,
+    pushTable: tables.push,
+    startDateTime: bounds.startDateTime,
+    endExclusiveDateTime: bounds.endExclusiveDateTime,
+    limit,
+  });
+
+  const sql = `
+    SELECT
+      ? AS partnerKey,
+      d.ALBUM_ID AS albumId,
+      d.BATCH_ID AS batchId,
+      d.DDEX_TYPE AS ddexType,
+      DATE_FORMAT(d.DELETION_DATE, '%Y-%m-%d %H:%i:%s') AS addedOn,
+      DATE_FORMAT(d.UPDATED_ON, '%Y-%m-%d %H:%i:%s') AS updatedOn,
+      d.TRACK_IDS AS trackIdsJson
+    FROM (
+      SELECT t.ALBUM_ID, t.BATCH_ID, t.DDEX_TYPE, t.DELETION_DATE, t.UPDATED_ON, t.TRACK_IDS
+      FROM ${contentsTable} t
+      INNER JOIN ${pushTable} pt
+          ON pt.BATCH_ID = t.BATCH_ID
+         AND pt.STATUS = 1
+      INNER JOIN (
+          SELECT c.ALBUM_ID,
+                 MAX(
+                   CONCAT(
+                     COALESCE(
+                       DATE_FORMAT(c.DELETION_DATE, '%Y-%m-%d %H:%i:%s'),
+                       '0000-00-00 00:00:00'
+                     ),
+                     '|',
+                     COALESCE(
+                       DATE_FORMAT(c.UPDATED_ON, '%Y-%m-%d %H:%i:%s'),
+                       '0000-00-00 00:00:00'
+                     ),
+                     '|',
+                     COALESCE(LPAD(c.BATCH_ID, 64, '0'), '0')
+                   )
+                 ) AS latest_key
+          FROM ${contentsTable} c
+          INNER JOIN ${pushTable} p
+              ON p.BATCH_ID = c.BATCH_ID
+             AND p.STATUS = 1
+          WHERE c.DDEX_TYPE = 'AUDIO_ALBUM_TAKEDOWN'
+            AND c.STATUS = 1
+            AND c.DELETION_DATE >= ?
+            AND c.DELETION_DATE <  ?
+          GROUP BY c.ALBUM_ID
+      ) latest_takedown
+         ON latest_takedown.ALBUM_ID = t.ALBUM_ID
+        AND latest_takedown.latest_key = CONCAT(
+              COALESCE(
+                DATE_FORMAT(t.DELETION_DATE, '%Y-%m-%d %H:%i:%s'),
+                '0000-00-00 00:00:00'
+              ),
+              '|',
+              COALESCE(
+                DATE_FORMAT(t.UPDATED_ON, '%Y-%m-%d %H:%i:%s'),
+                '0000-00-00 00:00:00'
+              ),
+              '|',
+              COALESCE(LPAD(t.BATCH_ID, 64, '0'), '0')
+            )
+      WHERE t.DDEX_TYPE = 'AUDIO_ALBUM_TAKEDOWN'
+        AND t.STATUS = 1
+        AND t.DELETION_DATE >= ?
+        AND t.DELETION_DATE <  ?
+        AND t.TRACK_IDS IS NOT NULL
+        AND t.TRACK_IDS != ''
+        AND JSON_VALID(t.TRACK_IDS) = 1
+    ) d
+    ORDER BY d.DELETION_DATE DESC, d.UPDATED_ON DESC, d.BATCH_ID DESC
+    LIMIT ?;
+  `;
+
+  const params = [
+    partnerKey,
+    bounds.startDateTime,
+    bounds.endExclusiveDateTime,
+    bounds.startDateTime,
+    bounds.endExclusiveDateTime,
+    limit,
+  ];
+
+  const b2bPool = getB2BPool();
+  const [rows] = await b2bPool.query(sql, params);
+  const deliveries = (rows || []).map((row) => mapRowWithTrackIds(row, partnerKey));
+  logDebug("Partner-db takedown-rows query completed", {
+    partner: partnerKey,
+    contentsTable: tables.contents,
+    returnedRows: deliveries.length,
+    durationMs: Date.now() - startedAt,
+  });
   return deliveries;
 }
 
@@ -749,6 +1067,12 @@ function getSummaryCacheKey(config, bounds) {
 
 function getRecentDeliveriesCacheKey(partner, bounds, limit) {
   return `recent|${partner}|${bounds.startDateTime}|${bounds.endExclusiveDateTime}|${limit}`;
+}
+
+function getDetailsRowsCacheKey({ partner, type, bounds, limit }) {
+  const startKey = bounds?.startDateTime || "all-time";
+  const endKey = bounds?.endExclusiveDateTime || "all-time";
+  return `details|${partner}|${type}|${startKey}|${endKey}|${limit}`;
 }
 
 function getCached(cache, cacheKey) {
@@ -829,7 +1153,7 @@ async function executeTotalContentLive(config) {
     metasea: metaseaCount,
     partnerDb: partnerDbCount,
     b2b: partnerDbCount,
-    total: metaseaCount + partnerDbCount,
+    total: partnerDbCount,
     partnerDbTables: config.partnerDbTables,
   };
 
@@ -838,7 +1162,7 @@ async function executeTotalContentLive(config) {
     retailerId: config.retailerId,
     metasea: metaseaCount,
     partnerDb: partnerDbCount,
-    total: metaseaCount + partnerDbCount,
+    total: partnerDbCount,
   });
   return payload;
 }
@@ -1049,6 +1373,7 @@ async function executeAudioRecentDeliveries({ partner, bounds, limit }) {
     partnerCount: partnerKeys.length,
   });
 
+  const enrichedRows = await enrichRowsWithAlbumMetadata(topRows);
   return {
     partner: String(partner || "").toLowerCase(),
     limit,
@@ -1056,7 +1381,7 @@ async function executeAudioRecentDeliveries({ partner, bounds, limit }) {
       from: bounds.startDateTime,
       toExclusive: bounds.endExclusiveDateTime,
     },
-    rows: topRows,
+    rows: enrichedRows,
   };
 }
 
@@ -1111,5 +1436,168 @@ export async function getAudioRecentDeliveries({
     });
 
   inflightAudioRecentDeliveries.set(cacheKey, promise);
+  return promise;
+}
+
+async function executeAudioDetailsRows({ partner, type, bounds, limit }) {
+  const partnerKeys = resolveRecentDeliveriesPartners(partner);
+  const shouldMergeAllPartners = partnerKeys.length > 1;
+  const queryLimitPerPartner = shouldMergeAllPartners
+    ? Math.max(Math.ceil(limit / partnerKeys.length) + 200, 300)
+    : limit;
+
+  logInfo("Fetching audio details rows", {
+    partner,
+    type,
+    partnerCount: partnerKeys.length,
+    limit,
+    startDateTime: bounds?.startDateTime,
+    endExclusiveDateTime: bounds?.endExclusiveDateTime,
+  });
+
+  const queryPromises = partnerKeys.map((partnerKey) => {
+    const config = resolvePartnerConfiguration(partnerKey);
+    if (type === "live") {
+      return queryPartnerDbLiveRows({
+        partnerKey,
+        tables: config.partnerDbTables,
+        limit: queryLimitPerPartner,
+      });
+    }
+    if (type === "delivered") {
+      return queryPartnerDbRecentDeliveriesRows({
+        partnerKey,
+        tables: config.partnerDbTables,
+        bounds,
+        limit: queryLimitPerPartner,
+      });
+    }
+    return queryPartnerDbTakenDownRows({
+      partnerKey,
+      tables: config.partnerDbTables,
+      bounds,
+      limit: queryLimitPerPartner,
+    });
+  });
+
+  const results = await Promise.allSettled(queryPromises);
+  const mergedRows = [];
+  let successfulPartnerQueries = 0;
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      successfulPartnerQueries += 1;
+      mergedRows.push(...result.value);
+      continue;
+    }
+    logError("Audio details rows query failed", {
+      partner,
+      type,
+      error: result.reason?.message,
+      code: result.reason?.code,
+    });
+  }
+
+  if (successfulPartnerQueries === 0 && results.length > 0) {
+    const error = new Error(
+      "Unable to fetch audio details rows from partner DB. Check API logs for details.",
+    );
+    error.statusCode = 502;
+    throw error;
+  }
+
+  mergedRows.sort((left, right) => {
+    const leftAdded = left.addedOn || "";
+    const rightAdded = right.addedOn || "";
+    if (leftAdded !== rightAdded) {
+      return rightAdded.localeCompare(leftAdded);
+    }
+    const leftUpdated = left.updatedOn || "";
+    const rightUpdated = right.updatedOn || "";
+    if (leftUpdated !== rightUpdated) {
+      return rightUpdated.localeCompare(leftUpdated);
+    }
+    return String(right.batchId || "").localeCompare(String(left.batchId || ""));
+  });
+
+  const rows = mergedRows.slice(0, limit);
+  const enrichedRows = await enrichRowsWithAlbumMetadata(rows);
+  logInfo("Audio details rows fetched", {
+    partner,
+    type,
+    returnedRows: enrichedRows.length,
+    partnerCount: partnerKeys.length,
+  });
+
+  return {
+    partner: String(partner || "").toLowerCase(),
+    type,
+    limit,
+    dateRange: bounds
+      ? {
+          from: bounds.startDateTime,
+          toExclusive: bounds.endExclusiveDateTime,
+        }
+      : null,
+    rows: enrichedRows,
+  };
+}
+
+export async function getAudioDetailsRows({
+  partner,
+  type,
+  startDate,
+  endDate,
+  limit = 100000,
+  bypassCache = false,
+}) {
+  const normalizedPartner = String(partner || "").trim().toLowerCase();
+  if (!normalizedPartner) {
+    const error = new Error("Partner is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const parsedType = parseReportType(type);
+  const parsedLimit = parsePositiveInteger(limit, 100000, { min: 1, max: 300000 });
+  const bounds =
+    parsedType === "live" ? null : parseDateRangeBounds(startDate, endDate);
+
+  const cacheKey = getDetailsRowsCacheKey({
+    partner: normalizedPartner,
+    type: parsedType,
+    bounds,
+    limit: parsedLimit,
+  });
+
+  if (!bypassCache) {
+    const cached = getCached(audioDetailsRowsCache, cacheKey);
+    if (cached) {
+      logDebug("Audio-details-rows cache hit", { cacheKey });
+      return cached;
+    }
+  } else {
+    logDebug("Audio-details-rows cache bypass requested", { cacheKey });
+  }
+
+  if (!bypassCache && inflightAudioDetailsRows.has(cacheKey)) {
+    logDebug("Audio-details-rows awaiting inflight query", { cacheKey });
+    return inflightAudioDetailsRows.get(cacheKey);
+  }
+
+  const promise = executeAudioDetailsRows({
+    partner: normalizedPartner,
+    type: parsedType,
+    bounds,
+    limit: parsedLimit,
+  })
+    .then((payload) => {
+      setCached(audioDetailsRowsCache, cacheKey, payload);
+      return payload;
+    })
+    .finally(() => {
+      inflightAudioDetailsRows.delete(cacheKey);
+    });
+
+  inflightAudioDetailsRows.set(cacheKey, promise);
   return promise;
 }
