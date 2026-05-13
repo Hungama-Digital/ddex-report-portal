@@ -49,13 +49,13 @@ const SummaryCards = ({
     ? getAggregated('takenDownThisMonth')
     : (stats?.takenDownThisMonth ?? 0);
 
-  const liveTotal = liveBreakdown?.isLiveData
-    ? (Number(liveBreakdown.metasea) || 0) + (Number(liveBreakdown.partnerDb) || 0)
-    : totalLiveCount;
   const liveMetaseaCount = Number(liveBreakdown?.metasea) || 0;
   const livePartnerDbCount = Number(liveBreakdown?.partnerDb) || 0;
-  const metaseaPct = liveTotal > 0 ? Math.round(((Number(liveBreakdown?.metasea) || 0) / liveTotal) * 100) : 0;
-  const partnerDbPct = liveTotal > 0 ? 100 - metaseaPct : 0;
+  const liveShareTotal = liveMetaseaCount + livePartnerDbCount;
+  const metaseaPct = liveShareTotal > 0
+    ? Math.round((liveMetaseaCount / liveShareTotal) * 100)
+    : 0;
+  const partnerDbPct = liveShareTotal > 0 ? 100 - metaseaPct : 0;
 
   const formatCount = (value) => numberFormatter.format(Number(value) || 0);
 
@@ -83,7 +83,9 @@ const SummaryCards = ({
     if (metricsLoading) {
       return renderLoadingValue();
     }
-    const displayValue = liveBreakdown?.isLiveData ? liveTotal : totalLiveCount;
+    const displayValue = liveBreakdown?.isLiveData
+      ? livePartnerDbCount
+      : totalLiveCount;
     return <span className="metric-value-large">{formatCount(displayValue)}</span>;
   };
 

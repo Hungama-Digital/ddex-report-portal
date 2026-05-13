@@ -224,14 +224,27 @@ function mapRowWithTrackIds(row, partnerKey) {
 async function queryAlbumMetadataMap(albumIds) {
   const normalizedIds = Array.from(
     new Set(
-      (albumIds || [])
-        .map((id) => String(id || "").trim())
-        .filter((id) => /^\d+$/.test(id)),
+      (albumIds || []).reduce((accumulator, id) => {
+        const parsed = Number.parseInt(String(id || "").trim(), 10);
+        if (Number.isInteger(parsed) && parsed > 0) {
+          accumulator.push(String(parsed));
+        }
+        return accumulator;
+      }, []),
     ),
   );
 
+  if (!normalizedIds.length) {
+    return new Map();
+  }
+
   const missingIds = normalizedIds.filter((id) => !albumMetadataCache.has(id));
   if (missingIds.length) {
+    logDebug("Fetching album metadata from Metasea DB", {
+      requestedAlbumIds: normalizedIds.length,
+      missingAlbumIds: missingIds.length,
+    });
+
     const metaseaPool = getMetaseaPool();
     const chunkSize = 1000;
     for (let index = 0; index < missingIds.length; index += chunkSize) {
@@ -240,12 +253,16 @@ async function queryAlbumMetadataMap(albumIds) {
       const sql = `
         SELECT
           td.content_id::text AS album_id,
-          COALESCE(ts.content_title, '') AS album_name,
+          COALESCE(meta_title.content_title, '') AS album_name,
           COALESCE(td.content_code, '') AS upc
         FROM mvcms.tbl_contents td
-        LEFT JOIN mvcms.tbl_content_details ts
-          ON ts.content_id = td.content_id
-         AND ts.language_id = 'eng'
+        LEFT JOIN LATERAL (
+          SELECT cd.content_title
+          FROM mvcms.tbl_content_details cd
+          WHERE cd.content_id = td.content_id
+          ORDER BY CASE WHEN cd.language_id = 'eng' THEN 0 ELSE 1 END
+          LIMIT 1
+        ) AS meta_title ON TRUE
         WHERE td.content_id = ANY($1::bigint[])
       `;
       const result = await metaseaPool.query(sql, [chunkNumbers]);
@@ -267,6 +284,11 @@ async function queryAlbumMetadataMap(albumIds) {
         }
       }
     }
+
+    logDebug("Album metadata fetch from Metasea completed", {
+      fetchedAlbumIds: missingIds.length,
+      cacheSize: albumMetadataCache.size,
+    });
   }
 
   const output = new Map();
