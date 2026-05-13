@@ -4,20 +4,15 @@ export const audioPartners = [
   { id: 'facebook', name: 'Facebook' },
   { id: 'jiosaavn', name: 'Jio Saavn' },
   { id: 'spotify', name: 'Spotify' },
-  { id: 'tiktok', name: 'TikTok' },
   { id: 'virgin', name: 'Virgin' }
 ];
 
-export const videoPartners = [
-  { id: 'airtelxstream', name: 'Airtel Xstream' },
-  { id: 'playboxtv', name: 'Playbox TV' },
-  { id: 'tataplaybinge', name: 'Tata Play Binge' },
-  { id: 'watcho', name: 'Watcho' }
-];
+export const videoPartners = [];
 
 export const generateMockContent = (type = 'audio') => {
   const data = [];
-  const statuses = ['Delivered', 'Live', 'Taken Down', 'Processing'];
+  const partnerPool = type === 'audio' ? audioPartners : videoPartners;
+  const fallbackPartnerId = type === 'audio' ? 'amazon' : 'unassigned-video';
   const artists = type === 'audio' 
     ? ['Arijit Singh', 'Shreya Ghoshal', 'Badshah', 'Neha Kakkar', 'Jubin Nautiyal', 'Diljit Dosanjh']
     : ['Salman Khan', 'Shah Rukh Khan', 'Deepika Padukone', 'Ranveer Singh', 'Alia Bhatt'];
@@ -69,6 +64,9 @@ export const generateMockContent = (type = 'audio') => {
     const month = isCurrentMonth ? '05' : String(Math.floor(Math.random() * 4) + 1).padStart(2, '0');
     const day = String(Math.floor(Math.random() * 28) + 1).padStart(2, '0');
     const genDate = `${year}-${month}-${day}`;
+    const randomPartner = partnerPool.length
+      ? partnerPool[Math.floor(Math.random() * partnerPool.length)]
+      : null;
 
     data.push({
       id: type === 'video' ? String(100000000 + i) : String(500000000 + i),
@@ -80,7 +78,7 @@ export const generateMockContent = (type = 'audio') => {
       upc: `890${100000000 + i}`,
       releaseDate: genDate,
       actionDate: isCurrentMonth ? `2026-05-${String(Math.floor(Math.random() * 28) + 1).padStart(2, '0')}` : genDate,
-      partner: (type === 'audio' ? audioPartners : videoPartners)[Math.floor(Math.random() * (type === 'audio' ? audioPartners : videoPartners).length)].id,
+      partner: randomPartner?.id || fallbackPartnerId,
       status: currentStatus,
       isLive: finalIsLive,
       deliveredThisMonth: deliveredThisMonth,

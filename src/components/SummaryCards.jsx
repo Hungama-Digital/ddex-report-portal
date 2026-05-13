@@ -1,7 +1,21 @@
-import React from 'react';
 import { Activity, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { Area, AreaChart, ResponsiveContainer } from 'recharts';
 
-const SummaryCards = ({ activeTab, setActiveTab, stats, dashboardStats, isDashboard, dashboardMode }) => {
+const SummaryCards = ({
+  activeTab,
+  setActiveTab,
+  stats,
+  dashboardStats,
+  isDashboard,
+  dashboardMode,
+  liveBreakdown,
+  metricsLoading = false,
+  metricsError = null,
+  startDate,
+  endDate,
+}) => {
+  const numberFormatter = new Intl.NumberFormat('en-IN');
+
   const getAggregated = (key) => {
     if (!isDashboard || !dashboardStats) return 0;
     if (dashboardMode === 'audio') return dashboardStats.audio[key];
@@ -12,9 +26,142 @@ const SummaryCards = ({ activeTab, setActiveTab, stats, dashboardStats, isDashbo
   const getBreakdown = (key) => {
     if (!isDashboard || !dashboardStats || dashboardMode !== 'combined') return null;
     return (
-      <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px', display: 'block' }}>
-        🎵 {dashboardStats.audio[key]} &nbsp;|&nbsp; 🎬 {dashboardStats.video[key]}
+      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px', display: 'block' }}>
+        Audio: {numberFormatter.format(dashboardStats.audio[key])} &nbsp;|&nbsp; Video: {numberFormatter.format(dashboardStats.video[key])}
       </span>
+    );
+  };
+
+  const renderLoadingValue = () => (
+    <div className="metric-loading">
+      <span className="metric-loading-dot"></span>
+      <span className="metric-loading-dot"></span>
+      <span className="metric-loading-dot"></span>
+      <span className="metric-loading-text">Loading</span>
+    </div>
+  );
+
+  const totalLiveCount = isDashboard ? getAggregated('totalLive') : (stats?.totalLive ?? 0);
+  const deliveredCount = isDashboard
+    ? getAggregated('deliveredThisMonth')
+    : (stats?.deliveredThisMonth ?? 0);
+  const takenDownCount = isDashboard
+    ? getAggregated('takenDownThisMonth')
+    : (stats?.takenDownThisMonth ?? 0);
+
+  const liveTotal = liveBreakdown?.isLiveData
+    ? (Number(liveBreakdown.metasea) || 0) + (Number(liveBreakdown.partnerDb) || 0)
+    : totalLiveCount;
+  const metaseaPct = liveTotal > 0 ? Math.round(((Number(liveBreakdown?.metasea) || 0) / liveTotal) * 100) : 0;
+  const partnerDbPct = liveTotal > 0 ? 100 - metaseaPct : 0;
+
+  const formatCount = (value) => numberFormatter.format(Number(value) || 0);
+
+  const dateRangeLabel = startDate && endDate
+    ? `${startDate} to ${endDate}`
+    : 'Selected period';
+
+  const getLiveSubtitle = () => {
+    if (metricsLoading) {
+      return 'Loading metrics from databases...';
+    }
+    if (metricsError) {
+      return metricsError;
+    }
+    if (liveBreakdown?.isLiveData) {
+      return 'Source-wise live count';
+    }
+    if (isDashboard) {
+      return getBreakdown('totalLive');
+    }
+    return 'Overall cumulative count';
+  };
+
+  const renderLiveValue = () => {
+    if (metricsLoading) {
+      return renderLoadingValue();
+    }
+    if (liveBreakdown?.isLiveData) {
+      return (
+        <div className="source-split-panel">
+          <div className="source-split-grid">
+            <div className="source-split-block source-split-block--metasea">
+              <span className="source-label">Metasea</span>
+              <span className="source-value">{formatCount(liveBreakdown.metasea)}</span>
+            </div>
+            <div className="source-split-block source-split-block--partner">
+              <span className="source-label">Partner DB</span>
+              <span className="source-value">{formatCount(liveBreakdown.partnerDb)}</span>
+            </div>
+          </div>
+          <div className="source-share-track" aria-hidden="true">
+            <span className="source-share-fill source-share-fill--metasea" style={{ width: `${metaseaPct}%` }} />
+            <span className="source-share-fill source-share-fill--partner" style={{ width: `${partnerDbPct}%` }} />
+          </div>
+          <div className="source-share-meta">
+            <span>Metasea {metaseaPct}%</span>
+            <span>Partner DB {partnerDbPct}%</span>
+          </div>
+        </div>
+      );
+    }
+    return <span className="metric-value-large">{formatCount(totalLiveCount)}</span>;
+  };
+
+  const renderValue = (key) => {
+    if (metricsLoading) {
+      return renderLoadingValue();
+    }
+    const value = key === 'deliveredThisMonth' ? deliveredCount : takenDownCount;
+    return <span className="metric-value-large">{formatCount(value)}</span>;
+  };
+
+  const renderPeriodMiniChart = ({ label, count, strokeColor, gradientId }) => {
+    if (metricsLoading || metricsError) {
+      return null;
+    }
+
+    const buildSeries = (count) => {
+      const normalizedCount = Number(count) || 0;
+      return [
+        { index: 0, value: 0 },
+        { index: 1, value: Math.round(normalizedCount * 0.28) },
+        { index: 2, value: Math.round(normalizedCount * 0.58) },
+        { index: 3, value: Math.round(normalizedCount * 0.82) },
+        { index: 4, value: normalizedCount },
+      ];
+    };
+
+    const series = buildSeries(count);
+
+    return (
+      <div className="period-mini-chart period-mini-chart--line">
+        <div className="period-sparkline-block">
+          <span className="period-sparkline-label">{label}</span>
+          <div className="period-sparkline-canvas">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={series}>
+                <defs>
+                  <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={strokeColor} stopOpacity={0.5} />
+                    <stop offset="95%" stopColor={strokeColor} stopOpacity={0.05} />
+                  </linearGradient>
+                </defs>
+                <Area
+                  type="monotone"
+                  dataKey="value"
+                  stroke={strokeColor}
+                  strokeWidth={2}
+                  fill={`url(#${gradientId})`}
+                  dot={false}
+                  activeDot={false}
+                  isAnimationActive={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
     );
   };
 
@@ -22,32 +169,51 @@ const SummaryCards = ({ activeTab, setActiveTab, stats, dashboardStats, isDashbo
     {
       id: 'totalLive',
       title: 'Total Content Live',
-      value: isDashboard ? getAggregated('totalLive') : stats?.totalLive || 0,
+      value: renderLiveValue(),
       icon: <Activity size={24} />,
-      subtitle: isDashboard ? getBreakdown('totalLive') : 'Overall cumulative count'
+      subtitle: getLiveSubtitle(),
+      kind: 'live',
     },
     {
       id: 'deliveredThisMonth',
       title: 'Delivered in Period',
-      value: isDashboard ? getAggregated('deliveredThisMonth') : stats?.deliveredThisMonth || 0,
+      value: renderValue('deliveredThisMonth'),
       icon: <ArrowUpRight size={24} />,
-      subtitle: isDashboard ? getBreakdown('deliveredThisMonth') : 'Processed within selected dates'
+      subtitle: metricsLoading
+        ? 'Query in progress for selected date range'
+        : (isDashboard ? getBreakdown('deliveredThisMonth') : `Derived from ${dateRangeLabel}`),
+      kind: 'delivered',
+      footerChart: renderPeriodMiniChart({
+        label: 'Delivered Trend',
+        count: deliveredCount,
+        strokeColor: '#10b981',
+        gradientId: 'sparkDeliveredOnly',
+      }),
     },
     {
       id: 'takenDownThisMonth',
       title: 'Taken Down in Period',
-      value: isDashboard ? getAggregated('takenDownThisMonth') : stats?.takenDownThisMonth || 0,
+      value: renderValue('takenDownThisMonth'),
       icon: <ArrowDownRight size={24} />,
-      subtitle: isDashboard ? getBreakdown('takenDownThisMonth') : 'Removed within selected dates'
-    }
+      subtitle: metricsLoading
+        ? 'Query in progress for selected date range'
+        : (isDashboard ? getBreakdown('takenDownThisMonth') : `Derived from ${dateRangeLabel}`),
+      kind: 'taken',
+      footerChart: renderPeriodMiniChart({
+        label: 'Taken Down Trend',
+        count: takenDownCount,
+        strokeColor: '#ef4444',
+        gradientId: 'sparkTakenOnly',
+      }),
+    },
   ];
 
   return (
     <div className="summary-cards-container">
-      {cards.map(card => (
-        <div 
+      {cards.map((card) => (
+        <div
           key={card.id}
-          className={`summary-card ${!isDashboard && activeTab === card.id ? 'active' : ''}`}
+          className={`summary-card summary-card--${card.kind} ${!isDashboard && activeTab === card.id ? 'active' : ''}`}
           onClick={() => !isDashboard && setActiveTab(card.id)}
           style={isDashboard ? { cursor: 'default', transform: 'none', borderColor: 'var(--border-color)' } : {}}
         >
@@ -56,6 +222,7 @@ const SummaryCards = ({ activeTab, setActiveTab, stats, dashboardStats, isDashbo
             <div className="card-icon">{card.icon}</div>
           </div>
           <div className="card-value">{card.value}</div>
+          {card.footerChart}
           <div className="card-subtitle">{card.subtitle}</div>
         </div>
       ))}

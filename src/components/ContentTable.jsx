@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { FileQuestion, Search, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import DetailModal from './DetailModal';
 
@@ -95,7 +95,7 @@ const ContentTable = ({ filteredContents, activeTab, activePage }) => {
     </html>`;
 
     return 'data:application/vnd.ms-excel;charset=utf-8,' + encodeURIComponent(htmlStr);
-  }, [searchedData]);
+  }, [searchedData, activePage]);
 
   return (
     <div className="content-table-container">
