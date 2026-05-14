@@ -500,31 +500,41 @@ function App() {
     });
 
     const periodPromise = isAllAudioPartnersSelected
-      ? Promise.allSettled(
-          audioPartners.map((partner) =>
-            fetchAudioPartnerSummary({
-              partner: partner.id,
-              startDate,
-              endDate,
-              signal: abortController.signal,
-            }),
-          ),
-        ).then((responses) => {
-          const summaries = responses
-            .filter((item) => item.status === 'fulfilled')
-            .map((item) => item.value)
-            .filter(Boolean);
-          if (summaries.length === 0) {
+      ? (async () => {
+          // Intelligent load control:
+          // run all-partner period queries sequentially to avoid DB/query burst.
+          let deliveredInPeriod = 0;
+          let takenDownInPeriod = 0;
+          let successCount = 0;
+
+          for (const partner of audioPartners) {
+            if (abortController.signal.aborted) {
+              const abortError = new Error('Aborted');
+              abortError.name = 'AbortError';
+              throw abortError;
+            }
+
+            try {
+              const summary = await fetchAudioPartnerSummary({
+                partner: partner.id,
+                startDate,
+                endDate,
+                signal: abortController.signal,
+              });
+              deliveredInPeriod += Number(summary?.deliveredInPeriod) || 0;
+              takenDownInPeriod += Number(summary?.takenDownInPeriod) || 0;
+              successCount += 1;
+            } catch (_error) {
+              // keep continuing so one partner failure doesn't block whole dashboard
+            }
+          }
+
+          if (!successCount) {
             throw new Error('Unable to fetch period metrics for partners.');
           }
-          return summaries.reduce(
-            (acc, item) => ({
-              deliveredInPeriod: acc.deliveredInPeriod + (Number(item.deliveredInPeriod) || 0),
-              takenDownInPeriod: acc.takenDownInPeriod + (Number(item.takenDownInPeriod) || 0),
-            }),
-            { deliveredInPeriod: 0, takenDownInPeriod: 0 },
-          );
-        })
+
+          return { deliveredInPeriod, takenDownInPeriod };
+        })()
       : fetchAudioPartnerSummary({
           partner: selectedPartner,
           startDate,
@@ -615,6 +625,17 @@ function App() {
       return;
     }
 
+    const allPartnerPeriodReady =
+      selectedPartner !== 'all' ||
+      !hasValidDateRange ||
+      (Boolean(currentAudioPeriodKey) &&
+        audioPeriodMetrics.queryKey === currentAudioPeriodKey &&
+        audioPeriodMetrics.status === 'success');
+
+    if (!allPartnerPeriodReady) {
+      return;
+    }
+
     if (!hasValidDateRange) {
       setRecentDeliveriesState({
         queryKey: currentRecentDeliveriesKey,
@@ -669,7 +690,19 @@ function App() {
     return () => {
       abortController.abort();
     };
-  }, [currentRecentDeliveriesKey, recentDeliveriesPartner, startDate, endDate, hasValidDateRange, isAudioSummaryReady, authUser]);
+  }, [
+    currentRecentDeliveriesKey,
+    recentDeliveriesPartner,
+    startDate,
+    endDate,
+    hasValidDateRange,
+    isAudioSummaryReady,
+    selectedPartner,
+    currentAudioPeriodKey,
+    audioPeriodMetrics.queryKey,
+    audioPeriodMetrics.status,
+    authUser,
+  ]);
 
   useEffect(() => {
     if (!authUser || !shouldShowQueryDebugPanel) {
@@ -728,6 +761,16 @@ function App() {
 
   useEffect(() => {
     if (!authUser || !currentAudioDetailsKey || !isAudioSummaryReady) {
+      return;
+    }
+
+    if (selectedPartner === 'all') {
+      setAudioDetailsRowsState({
+        queryKey: currentAudioDetailsKey,
+        status: 'success',
+        error: null,
+        rows: [],
+      });
       return;
     }
 
