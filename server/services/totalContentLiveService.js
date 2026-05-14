@@ -35,6 +35,7 @@ const TRACK_INDEX_SERIES_SQL = `
 `;
 
 const inflightTotalContentLive = new Map();
+const inflightTotalContentLiveAll = new Map();
 const inflightAudioSummary = new Map();
 const inflightAudioRecentDeliveries = new Map();
 const inflightAudioDetailsRows = new Map();
@@ -1168,11 +1169,118 @@ async function executeTotalContentLive(config) {
   return payload;
 }
 
+async function executeAllPartnersTotalContentLive({ bypassCache = false } = {}) {
+  logInfo("Fetching total-content-live for all partners", {
+    partnerCount: SUPPORTED_AUDIO_PARTNERS.length,
+  });
+
+  const results = await Promise.allSettled(
+    SUPPORTED_AUDIO_PARTNERS.map((partnerKey) =>
+      getAudioPartnerTotalContentLive({
+        partner: partnerKey,
+        bypassCache,
+      }),
+    ),
+  );
+
+  const successful = [];
+  for (let index = 0; index < results.length; index += 1) {
+    const result = results[index];
+    const partnerKey = SUPPORTED_AUDIO_PARTNERS[index];
+    if (result.status === "fulfilled") {
+      successful.push(result.value);
+      continue;
+    }
+    logError("All-partners total-content-live partner query failed", {
+      partner: partnerKey,
+      error: result.reason?.message,
+      code: result.reason?.code,
+    });
+  }
+
+  if (!successful.length) {
+    const error = new Error(
+      "Unable to fetch total-content-live from both databases for all partners.",
+    );
+    error.statusCode = 502;
+    throw error;
+  }
+
+  const aggregate = successful.reduce(
+    (acc, item) => {
+      acc.metasea += Number(item.metasea) || 0;
+      acc.partnerDb += Number(item.partnerDb) || 0;
+      return acc;
+    },
+    { metasea: 0, partnerDb: 0 },
+  );
+
+  const payload = {
+    partner: "all",
+    retailerId: null,
+    metasea: aggregate.metasea,
+    partnerDb: aggregate.partnerDb,
+    b2b: aggregate.partnerDb,
+    total: aggregate.partnerDb,
+    partnerBreakdown: successful.map((item) => ({
+      partner: item.partner,
+      retailerId: item.retailerId,
+      metasea: Number(item.metasea) || 0,
+      partnerDb: Number(item.partnerDb) || 0,
+      b2b: Number(item.partnerDb) || 0,
+      total: Number(item.partnerDb) || 0,
+      partnerDbTables: item.partnerDbTables,
+    })),
+  };
+
+  logInfo("All-partners total-content-live fetched", {
+    partnerCount: payload.partnerBreakdown.length,
+    metasea: payload.metasea,
+    partnerDb: payload.partnerDb,
+    total: payload.total,
+  });
+
+  return payload;
+}
+
 export async function getAudioPartnerTotalContentLive({
   partner,
   retailerIdOverride,
   bypassCache = false,
 }) {
+  const normalizedPartner = String(partner || "").trim().toLowerCase();
+  if (normalizedPartner === "all") {
+    const cacheKey = `all|${SUPPORTED_AUDIO_PARTNERS.join(",")}`;
+    const cacheNamespace = "audio:total-content-live-all";
+
+    if (!bypassCache) {
+      const cached = await getCached(cacheNamespace, cacheKey);
+      if (cached) {
+        logDebug("Total-content-live-all cache hit", { cacheKey });
+        return cached;
+      }
+    } else {
+      logDebug("Total-content-live-all cache bypass requested", { cacheKey });
+    }
+
+    if (!bypassCache && inflightTotalContentLiveAll.has(cacheKey)) {
+      logDebug("Total-content-live-all awaiting inflight query", { cacheKey });
+      return inflightTotalContentLiveAll.get(cacheKey);
+    }
+
+    const promise = executeAllPartnersTotalContentLive({ bypassCache })
+      .then(async (payload) => {
+        await setCached(cacheNamespace, cacheKey, payload);
+        return payload;
+      })
+      .finally(() => {
+        inflightTotalContentLiveAll.delete(cacheKey);
+      });
+
+    inflightTotalContentLiveAll.set(cacheKey, promise);
+    return promise;
+  }
+
   const config = resolvePartnerConfiguration(partner, retailerIdOverride);
   const cacheKey = getCacheKey(config);
   const cacheNamespace = "audio:total-content-live";

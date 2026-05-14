@@ -440,33 +440,9 @@ function App() {
     }));
 
     const livePromise = isAllAudioPartnersSelected
-      ? Promise.allSettled(
-          audioPartners.map((partner) =>
-            fetchAudioPartnerTotalContentLive({
-              partner: partner.id,
-              signal: abortController.signal,
-            }),
-          ),
-        ).then((responses) => {
-          const summaries = responses
-            .filter((item) => item.status === 'fulfilled')
-            .map((item) => item.value)
-            .filter(Boolean);
-          if (summaries.length === 0) {
-            throw new Error('Unable to fetch live counts for partners.');
-          }
-          return summaries.reduce(
-            (acc, item) => ({
-              metasea: acc.metasea + (Number(item.metasea) || 0),
-              partnerDb: acc.partnerDb + (Number(item.partnerDb) || 0),
-              total: acc.total + (Number(item.total) || 0),
-            }),
-            {
-              metasea: 0,
-              partnerDb: 0,
-              total: 0,
-            },
-          );
+      ? fetchAudioPartnerTotalContentLive({
+          partner: 'all',
+          signal: abortController.signal,
         })
       : fetchAudioPartnerTotalContentLive({
           partner: selectedPartner,

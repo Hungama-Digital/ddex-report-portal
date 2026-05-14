@@ -160,7 +160,7 @@ export async function fetchAudioPartnerTotalContentLive({
   retailerId,
   signal,
 }) {
-  if (!partner || partner === 'all') {
+  if (!partner) {
     return null;
   }
 
@@ -180,6 +180,7 @@ export async function fetchAudioPartnerTotalContentLive({
     metasea: Number(payload.metasea) || 0,
     partnerDb: Number(payload.partnerDb ?? payload.b2b) || 0,
     total: Number(payload.total) || 0,
+    partnerBreakdown: Array.isArray(payload.partnerBreakdown) ? payload.partnerBreakdown : [],
   };
 }
 
