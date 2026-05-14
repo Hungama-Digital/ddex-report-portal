@@ -351,7 +351,6 @@ function App() {
     (activePage === 'audio-reports' || (activePage === 'dashboard' && dashboardMode !== 'video')) &&
     isAudioSelectionSupported;
   const shouldShowQueryDebugPanel =
-    authUser?.role === 'admin' &&
     isAudioSelectionSupported &&
     (activePage === 'dashboard' || activePage === 'audio-reports');
   const hasValidDateRange =
