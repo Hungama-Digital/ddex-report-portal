@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Download, FileDiff, Trash2 } from 'lucide-react';
+import { Download, FileDiff, RefreshCw, Trash2 } from 'lucide-react';
 
 function sourceLabel(value) {
   const key = String(value || '').toLowerCase();
@@ -63,7 +63,9 @@ const ReportsPage = ({
           <p>Note: only latest 7 days reports are available.</p>
         </div>
         <div className="reports-actions">
-          <button onClick={onRefresh} disabled={loading}>Refresh</button>
+          <button onClick={onRefresh} disabled={loading}>
+            <RefreshCw size={14} /> Refresh
+          </button>
           <button
             className={`identify-btn ${canIdentify ? 'ready' : 'disabled'}`}
             onClick={handleIdentify}
@@ -81,8 +83,8 @@ const ReportsPage = ({
         </div>
       ) : null}
 
-      <div className="table-wrapper">
-        <table>
+      <div className="table-wrapper reports-main-table">
+        <table className="reports-table">
           <thead>
             <tr>
               <th></th>
@@ -138,8 +140,8 @@ const ReportsPage = ({
 
       <div className="reports-jobs">
         <h3>Recent Report Jobs</h3>
-        <div className="table-wrapper">
-          <table>
+        <div className="table-wrapper reports-jobs-table">
+          <table className="reports-table">
             <thead>
               <tr>
                 <th>Job ID</th>
@@ -147,16 +149,14 @@ const ReportsPage = ({
                 <th>Partner</th>
                 <th>Source</th>
                 <th>Status</th>
-                <th>Created</th>
                 <th>Started</th>
                 <th>Finished</th>
-                <th>Error</th>
               </tr>
             </thead>
             <tbody>
               {(jobs || []).slice(0, 20).length === 0 ? (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '1rem' }}>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '1rem' }}>
                     No job history available.
                   </td>
                 </tr>
@@ -168,10 +168,8 @@ const ReportsPage = ({
                     <td>{partnerLabel(job.partner)}</td>
                     <td>{sourceLabel(job.source)}</td>
                     <td><span className={`job-status ${job.status}`}>{job.status}</span></td>
-                    <td>{String(job.created_at || '').replace('T', ' ').slice(0, 19)}</td>
                     <td>{job.started_at ? String(job.started_at).replace('T', ' ').slice(0, 19) : '-'}</td>
                     <td>{job.finished_at ? String(job.finished_at).replace('T', ' ').slice(0, 19) : '-'}</td>
-                    <td>{job.error_message || '-'}</td>
                   </tr>
                 ))
               )}
