@@ -171,11 +171,11 @@ export const TOTAL_CONTENT_LIVE_CACHE_TTL_MS = parseInteger(
 );
 export const TOTAL_LIVE_METASEA_QUERY_TIMEOUT_MS = parseInteger(
   process.env.TOTAL_LIVE_METASEA_QUERY_TIMEOUT_MS,
-  25000,
+  80000,
 );
 export const TOTAL_LIVE_PARTNERDB_QUERY_TIMEOUT_MS = parseInteger(
   process.env.TOTAL_LIVE_PARTNERDB_QUERY_TIMEOUT_MS,
-  45000,
+  80000,
 );
 
 export const REDIS_CACHE = {

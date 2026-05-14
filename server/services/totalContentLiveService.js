@@ -1222,6 +1222,7 @@ async function executeAllPartnersTotalContentLive({ bypassCache = false } = {}) 
   );
 
   const successful = [];
+  const failedPartners = [];
   for (let index = 0; index < results.length; index += 1) {
     const result = results[index];
     const partnerKey = SUPPORTED_AUDIO_PARTNERS[index];
@@ -1229,6 +1230,7 @@ async function executeAllPartnersTotalContentLive({ bypassCache = false } = {}) 
       successful.push(result.value);
       continue;
     }
+    failedPartners.push(partnerKey);
     logError("All-partners total-content-live partner query failed", {
       partner: partnerKey,
       error: result.reason?.message,
@@ -1236,9 +1238,11 @@ async function executeAllPartnersTotalContentLive({ bypassCache = false } = {}) 
     });
   }
 
-  if (!successful.length) {
+  if (failedPartners.length) {
     const error = new Error(
-      "Unable to fetch total-content-live from both databases for all partners.",
+      `Unable to fetch total-content-live for all partners. Failed partner(s): ${failedPartners.join(
+        ", ",
+      )}`,
     );
     error.statusCode = 502;
     throw error;
