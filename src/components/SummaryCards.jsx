@@ -1,4 +1,4 @@
-import { Activity, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { Activity, ArrowUp, ArrowDown } from 'lucide-react';
 import { Area, AreaChart, ResponsiveContainer } from 'recharts';
 
 const SummaryCards = ({
@@ -234,7 +234,7 @@ const SummaryCards = ({
   const cards = [
     {
       id: 'totalLive',
-      title: 'Total Content Live',
+      title: 'Total Content Currently Live',
       value: renderLiveValue(),
       icon: <Activity size={24} />,
       subtitle: getLiveSubtitle(),
@@ -246,7 +246,7 @@ const SummaryCards = ({
       id: 'deliveredThisMonth',
       title: 'Delivered in Period',
       value: renderValue('deliveredThisMonth'),
-      icon: <ArrowUpRight size={24} />,
+      icon: <ArrowUp size={24} />,
       subtitle: metricsLoading
         ? 'Query in progress for selected date range'
         : (isDashboard ? getBreakdown('deliveredThisMonth') : `Derived from ${dateRangeLabel}`),
@@ -260,9 +260,9 @@ const SummaryCards = ({
     },
     {
       id: 'takenDownThisMonth',
-      title: 'Taken Down in Period',
+      title: 'Take Down in Period',
       value: renderValue('takenDownThisMonth'),
-      icon: <ArrowDownRight size={24} />,
+      icon: <ArrowDown size={24} />,
       subtitle: metricsLoading
         ? 'Query in progress for selected date range'
         : (isDashboard ? getBreakdown('takenDownThisMonth') : `Derived from ${dateRangeLabel}`),

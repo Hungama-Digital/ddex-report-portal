@@ -509,7 +509,7 @@ async function shutdown(signal) {
   logInfo(`Received ${signal}, closing resources...`);
   server.close(async () => {
     await Promise.allSettled([closePools(), closeRedisCache()]);
-    process.exit(0);
+    // process.exit(0);
   });
 }
 
