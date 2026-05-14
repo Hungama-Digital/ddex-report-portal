@@ -60,38 +60,6 @@ const EMPTY_AUDIO_DETAILS_ROWS = {
   rows: [],
 };
 
-const CLIENT_CACHE_TTL_MS = 30 * 60 * 1000;
-const clientMetricCache = {
-  summary: new Map(),
-  recentDeliveries: new Map(),
-  detailRows: new Map(),
-};
-
-function getClientCacheValue(bucket, key) {
-  if (!key) {
-    return null;
-  }
-  const entry = bucket.get(key);
-  if (!entry) {
-    return null;
-  }
-  if (Date.now() - entry.cachedAt > CLIENT_CACHE_TTL_MS) {
-    bucket.delete(key);
-    return null;
-  }
-  return entry.value;
-}
-
-function setClientCacheValue(bucket, key, value) {
-  if (!key) {
-    return;
-  }
-  bucket.set(key, {
-    cachedAt: Date.now(),
-    value,
-  });
-}
-
 function useLocalStorage(key, initialValue) {
   const [storedValue, setStoredValue] = useState(() => {
     try {
@@ -418,12 +386,6 @@ function App() {
       return;
     }
 
-    const cachedSummary = getClientCacheValue(clientMetricCache.summary, currentAudioSummaryKey);
-    if (cachedSummary) {
-      setAudioSummary(cachedSummary);
-      return;
-    }
-
     const abortController = new AbortController();
     setAudioSummary((previous) => ({
       ...previous,
@@ -499,16 +461,6 @@ function App() {
           deliveredInPeriod: Number(summary.deliveredInPeriod) || 0,
           takenDownInPeriod: Number(summary.takenDownInPeriod) || 0,
         });
-        setClientCacheValue(clientMetricCache.summary, currentAudioSummaryKey, {
-          queryKey: currentAudioSummaryKey,
-          status: 'success',
-          error: null,
-          metasea: Number(summary.metasea) || 0,
-          partnerDb: Number(summary.partnerDb) || 0,
-          total: Number(summary.total) || 0,
-          deliveredInPeriod: Number(summary.deliveredInPeriod) || 0,
-          takenDownInPeriod: Number(summary.takenDownInPeriod) || 0,
-        });
       })
       .catch((error) => {
         if (abortController.signal.aborted || error?.name === 'AbortError') {
@@ -557,15 +509,6 @@ function App() {
       return;
     }
 
-    const cachedDeliveries = getClientCacheValue(
-      clientMetricCache.recentDeliveries,
-      currentRecentDeliveriesKey,
-    );
-    if (cachedDeliveries) {
-      setRecentDeliveriesState(cachedDeliveries);
-      return;
-    }
-
     if (!hasValidDateRange) {
       setRecentDeliveriesState({
         queryKey: currentRecentDeliveriesKey,
@@ -598,12 +541,6 @@ function App() {
         }
 
         setRecentDeliveriesState({
-          queryKey: currentRecentDeliveriesKey,
-          status: 'success',
-          error: null,
-          rows: response.rows,
-        });
-        setClientCacheValue(clientMetricCache.recentDeliveries, currentRecentDeliveriesKey, {
           queryKey: currentRecentDeliveriesKey,
           status: 'success',
           error: null,
@@ -667,12 +604,6 @@ function App() {
       return;
     }
 
-    const cachedDetailRows = getClientCacheValue(clientMetricCache.detailRows, currentAudioDetailsKey);
-    if (cachedDetailRows) {
-      setAudioDetailsRowsState(cachedDetailRows);
-      return;
-    }
-
     const abortController = new AbortController();
     setAudioDetailsRowsState({
       queryKey: currentAudioDetailsKey,
@@ -695,12 +626,6 @@ function App() {
         }
 
         setAudioDetailsRowsState({
-          queryKey: currentAudioDetailsKey,
-          status: 'success',
-          error: null,
-          rows: response.rows,
-        });
-        setClientCacheValue(clientMetricCache.detailRows, currentAudioDetailsKey, {
           queryKey: currentAudioDetailsKey,
           status: 'success',
           error: null,

@@ -7,6 +7,7 @@ import {
   SUPPORTED_AUDIO_PARTNERS,
   TOTAL_CONTENT_LIVE_CACHE_TTL_MS,
 } from "../config.js";
+import { readBackendCache, writeBackendCache } from "../cache.js";
 import { getB2BPool, getMetaseaPool } from "../db.js";
 import { logDebug, logError, logInfo } from "../logger.js";
 
@@ -33,13 +34,9 @@ const TRACK_INDEX_SERIES_SQL = `
   UNION ALL SELECT 45 UNION ALL SELECT 46 UNION ALL SELECT 47 UNION ALL SELECT 48 UNION ALL SELECT 49
 `;
 
-const totalContentLiveCache = new Map();
 const inflightTotalContentLive = new Map();
-const audioSummaryCache = new Map();
 const inflightAudioSummary = new Map();
-const audioRecentDeliveriesCache = new Map();
 const inflightAudioRecentDeliveries = new Map();
-const audioDetailsRowsCache = new Map();
 const inflightAudioDetailsRows = new Map();
 const albumMetadataCache = new Map();
 
@@ -1070,31 +1067,26 @@ function getDetailsRowsCacheKey({ partner, type, bounds, limit }) {
   return `details|${partner}|${type}|${startKey}|${endKey}|${limit}`;
 }
 
-function getCached(cache, cacheKey) {
+async function getCached(namespace, cacheKey) {
   if (TOTAL_CONTENT_LIVE_CACHE_TTL_MS <= 0) {
     return null;
   }
-
-  const cached = cache.get(cacheKey);
-  if (!cached) {
-    return null;
-  }
-
-  const ageMs = Date.now() - cached.cachedAt;
-  if (ageMs > TOTAL_CONTENT_LIVE_CACHE_TTL_MS) {
-    cache.delete(cacheKey);
-    return null;
-  }
-  return cached.value;
+  return readBackendCache({
+    namespace,
+    cacheKey,
+    ttlMs: TOTAL_CONTENT_LIVE_CACHE_TTL_MS,
+  });
 }
 
-function setCached(cache, cacheKey, value) {
+async function setCached(namespace, cacheKey, value) {
   if (TOTAL_CONTENT_LIVE_CACHE_TTL_MS <= 0) {
     return;
   }
-  cache.set(cacheKey, {
-    cachedAt: Date.now(),
+  await writeBackendCache({
+    namespace,
+    cacheKey,
     value,
+    ttlMs: TOTAL_CONTENT_LIVE_CACHE_TTL_MS,
   });
 }
 
@@ -1169,9 +1161,10 @@ export async function getAudioPartnerTotalContentLive({
 }) {
   const config = resolvePartnerConfiguration(partner, retailerIdOverride);
   const cacheKey = getCacheKey(config);
+  const cacheNamespace = "audio:total-content-live";
 
   if (!bypassCache) {
-    const cached = getCached(totalContentLiveCache, cacheKey);
+    const cached = await getCached(cacheNamespace, cacheKey);
     if (cached) {
       logDebug("Total-content-live cache hit", { cacheKey });
       return cached;
@@ -1186,8 +1179,8 @@ export async function getAudioPartnerTotalContentLive({
   }
 
   const promise = executeTotalContentLive(config)
-    .then((payload) => {
-      setCached(totalContentLiveCache, cacheKey, payload);
+    .then(async (payload) => {
+      await setCached(cacheNamespace, cacheKey, payload);
       return payload;
     })
     .finally(() => {
@@ -1263,9 +1256,10 @@ export async function getAudioPartnerSummary({
   const config = resolvePartnerConfiguration(partner, retailerIdOverride);
   const bounds = parseDateRangeBounds(startDate, endDate);
   const cacheKey = getSummaryCacheKey(config, bounds);
+  const cacheNamespace = "audio:summary";
 
   if (!bypassCache) {
-    const cached = getCached(audioSummaryCache, cacheKey);
+    const cached = await getCached(cacheNamespace, cacheKey);
     if (cached) {
       logDebug("Audio-summary cache hit", { cacheKey });
       return cached;
@@ -1280,8 +1274,8 @@ export async function getAudioPartnerSummary({
   }
 
   const promise = executeAudioPartnerSummary(config, bounds)
-    .then((payload) => {
-      setCached(audioSummaryCache, cacheKey, payload);
+    .then(async (payload) => {
+      await setCached(cacheNamespace, cacheKey, payload);
       return payload;
     })
     .finally(() => {
@@ -1396,7 +1390,7 @@ async function executeAudioRecentDeliveries({ partner, bounds, limit }) {
         bounds,
         limit,
       );
-      setCached(audioRecentDeliveriesCache, partnerCacheKey, partnerPayload);
+      await setCached("audio:recent-deliveries", partnerCacheKey, partnerPayload);
       logDebug("Recent-deliveries partner cache primed from all-partners query", {
         partner: partnerKey,
         cacheKey: partnerCacheKey,
@@ -1429,9 +1423,10 @@ export async function getAudioRecentDeliveries({
     bounds,
     parsedLimit,
   );
+  const cacheNamespace = "audio:recent-deliveries";
 
   if (!bypassCache) {
-    const cached = getCached(audioRecentDeliveriesCache, cacheKey);
+    const cached = await getCached(cacheNamespace, cacheKey);
     if (cached) {
       logDebug("Recent-deliveries cache hit", { cacheKey });
       return cached;
@@ -1450,8 +1445,8 @@ export async function getAudioRecentDeliveries({
     bounds,
     limit: parsedLimit,
   })
-    .then((payload) => {
-      setCached(audioRecentDeliveriesCache, cacheKey, payload);
+    .then(async (payload) => {
+      await setCached(cacheNamespace, cacheKey, payload);
       return payload;
     })
     .finally(() => {
@@ -1583,7 +1578,7 @@ async function executeAudioDetailsRows({ partner, type, bounds, limit }) {
         bounds,
         limit,
       });
-      setCached(audioDetailsRowsCache, partnerCacheKey, partnerPayload);
+      await setCached("audio:details-rows", partnerCacheKey, partnerPayload);
       logDebug("Audio-details partner cache primed from all-partners query", {
         partner: partnerKey,
         type,
@@ -1622,9 +1617,10 @@ export async function getAudioDetailsRows({
     bounds,
     limit: parsedLimit,
   });
+  const cacheNamespace = "audio:details-rows";
 
   if (!bypassCache) {
-    const cached = getCached(audioDetailsRowsCache, cacheKey);
+    const cached = await getCached(cacheNamespace, cacheKey);
     if (cached) {
       logDebug("Audio-details-rows cache hit", { cacheKey });
       return cached;
@@ -1644,8 +1640,8 @@ export async function getAudioDetailsRows({
     bounds,
     limit: parsedLimit,
   })
-    .then((payload) => {
-      setCached(audioDetailsRowsCache, cacheKey, payload);
+    .then(async (payload) => {
+      await setCached(cacheNamespace, cacheKey, payload);
       return payload;
     })
     .finally(() => {

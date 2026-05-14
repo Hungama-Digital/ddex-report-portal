@@ -170,6 +170,16 @@ export const TOTAL_CONTENT_LIVE_CACHE_TTL_MS = parseInteger(
   1800000,
 );
 
+export const REDIS_CACHE = {
+  enabled: parseBoolean(process.env.REDIS_ENABLED, true),
+  url: process.env.REDIS_URL || "",
+  host: process.env.REDIS_HOST || "127.0.0.1",
+  port: parseInteger(process.env.REDIS_PORT, 6379),
+  password: process.env.REDIS_PASSWORD || "",
+  db: parseInteger(process.env.REDIS_DB, 0),
+  keyPrefix: process.env.REDIS_KEY_PREFIX || "ddex-report-portal",
+};
+
 export const METASEA_DB = {
   host: process.env.METASEA_DB_HOST || "127.0.0.1",
   port: parseInteger(process.env.METASEA_DB_PORT, 5432),

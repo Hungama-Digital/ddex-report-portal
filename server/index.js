@@ -8,6 +8,7 @@ import {
   SUPPORTED_AUDIO_PARTNERS,
 } from './config.js';
 import { checkB2BConnection, checkMetaseaConnection, closePools } from './db.js';
+import { checkRedisCacheConnection, closeRedisCache } from './cache.js';
 import { logDebug, logError, logInfo } from './logger.js';
 import {
   getAudioDetailsRows,
@@ -73,9 +74,10 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.get('/api/health/db', async (_req, res) => {
-  const [metasea, b2b] = await Promise.allSettled([
+  const [metasea, b2b, redis] = await Promise.allSettled([
     checkMetaseaConnection(),
     checkB2BConnection(),
+    checkRedisCacheConnection(),
   ]);
 
   const metaseaStatus = {
@@ -94,11 +96,20 @@ app.get('/api/health/db', async (_req, res) => {
         : null,
   };
 
+  const redisStatus = {
+    ok: redis.status === 'fulfilled' ? redis.value : false,
+    error:
+      redis.status === 'rejected'
+        ? redis.reason?.message || 'Unknown Redis cache error'
+        : null,
+  };
+
   const allHealthy = metaseaStatus.ok && b2bStatus.ok;
   const responsePayload = {
     ok: allHealthy,
     metasea: metaseaStatus,
     b2b: b2bStatus,
+    redis: redisStatus,
   };
 
   if (!allHealthy) {
@@ -497,7 +508,7 @@ const server = app.listen(API_PORT, async () => {
 async function shutdown(signal) {
   logInfo(`Received ${signal}, closing resources...`);
   server.close(async () => {
-    await closePools();
+    await Promise.allSettled([closePools(), closeRedisCache()]);
     process.exit(0);
   });
 }
