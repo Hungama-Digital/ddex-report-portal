@@ -1129,18 +1129,16 @@ async function executeTotalContentLive(config) {
     });
   }
 
-  if (
-    metaseaResult.status === "rejected" ||
-    partnerDbResult.status === "rejected"
-  ) {
+  if (partnerDbResult.status === "rejected") {
     const error = new Error(
-      "One or more database queries failed. Check API logs for Metasea/Partner DB failure details.",
+      "Partner DB query failed. Check API logs for failure details.",
     );
     error.statusCode = 502;
     throw error;
   }
 
-  const metaseaCount = metaseaResult.value;
+  const metaseaCount =
+    metaseaResult.status === "fulfilled" ? metaseaResult.value : 0;
   const partnerDbCount = partnerDbResult.value;
   const payload = {
     partner: config.partnerKey,
