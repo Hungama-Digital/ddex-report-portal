@@ -95,6 +95,16 @@ export async function fetchPendingApprovals() {
   return apiFetch('/api/admin/approvals');
 }
 
+export async function fetchAdminUsers() {
+  return apiFetch('/api/admin/users');
+}
+
+export async function revokeAdminUser(userId) {
+  return apiFetch(`/api/admin/users/${encodeURIComponent(userId)}/revoke`, {
+    method: 'POST',
+  });
+}
+
 export async function approvePendingUser(userId) {
   return apiFetch(`/api/admin/approvals/${encodeURIComponent(userId)}/approve`, {
     method: 'POST',
@@ -117,6 +127,12 @@ export async function fetchReportJobs({ limit = 50 } = {}) {
   const params = new URLSearchParams();
   params.set('limit', String(limit));
   return apiFetch(`/api/reports/jobs?${params.toString()}`);
+}
+
+export async function deleteReportById(reportId) {
+  return apiFetch(`/api/reports/${encodeURIComponent(reportId)}`, {
+    method: 'DELETE',
+  });
 }
 
 export async function queueExportReport({ partner, source }) {

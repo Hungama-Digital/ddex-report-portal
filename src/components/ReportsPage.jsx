@@ -1,7 +1,36 @@
-import { useMemo, useState } from 'react';
-import { Download, FileDiff } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Download, FileDiff, Trash2 } from 'lucide-react';
 
-const ReportsPage = ({ reports, jobs, onRefresh, onGenerateDifference, onDownloadReport, loading, actionLoading }) => {
+function sourceLabel(value) {
+  const key = String(value || '').toLowerCase();
+  if (key === 'metasea') return 'Metasea';
+  if (key === 'partnerdb') return 'Partner DB';
+  if (key === 'difference') return 'Difference';
+  return value || '-';
+}
+
+function partnerLabel(value) {
+  const key = String(value || '').toLowerCase();
+  if (key === 'jiosaavn') return 'Jio Saavn';
+  if (key === 'bytedance') return 'Bytedance';
+  if (key === 'amazon') return 'Amazon';
+  if (key === 'facebook') return 'Facebook';
+  if (key === 'spotify') return 'Spotify';
+  if (key === 'virgin') return 'Virgin';
+  return value || '-';
+}
+
+const ReportsPage = ({
+  reports,
+  jobs,
+  authUser,
+  onRefresh,
+  onGenerateDifference,
+  onDownloadReport,
+  onDeleteReport,
+  loading,
+  actionLoading,
+}) => {
   const [selectedIds, setSelectedIds] = useState([]);
 
   const canIdentify = selectedIds.length === 2;
@@ -10,6 +39,10 @@ const ReportsPage = ({ reports, jobs, onRefresh, onGenerateDifference, onDownloa
     () => reports.filter((item) => selectedIds.includes(item.id)),
     [reports, selectedIds],
   );
+
+  useEffect(() => {
+    setSelectedIds((prev) => prev.filter((id) => reports.some((row) => row.id === id)).slice(-2));
+  }, [reports]);
 
   const toggleSelection = (id) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id].slice(-2)));
@@ -31,11 +64,14 @@ const ReportsPage = ({ reports, jobs, onRefresh, onGenerateDifference, onDownloa
         </div>
         <div className="reports-actions">
           <button onClick={onRefresh} disabled={loading}>Refresh</button>
-          {canIdentify ? (
-            <button className="identify-btn" onClick={handleIdentify} disabled={actionLoading}>
-              <FileDiff size={16} /> Identify Differences
-            </button>
-          ) : null}
+          <button
+            className={`identify-btn ${canIdentify ? 'ready' : 'disabled'}`}
+            onClick={handleIdentify}
+            disabled={actionLoading || !canIdentify}
+            title={canIdentify ? 'Generate difference report' : 'Select one Metasea and one Partner DB report'}
+          >
+            <FileDiff size={16} /> Identify Differences
+          </button>
         </div>
       </div>
 
@@ -56,12 +92,13 @@ const ReportsPage = ({ reports, jobs, onRefresh, onGenerateDifference, onDownloa
               <th>Date</th>
               <th>Rows</th>
               <th>Download</th>
+              {authUser?.role === 'admin' ? <th>Delete</th> : null}
             </tr>
           </thead>
           <tbody>
             {reports.length === 0 ? (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', padding: '1rem' }}>
+                <td colSpan={authUser?.role === 'admin' ? 8 : 7} style={{ textAlign: 'center', padding: '1rem' }}>
                   No reports available yet.
                 </td>
               </tr>
@@ -76,8 +113,8 @@ const ReportsPage = ({ reports, jobs, onRefresh, onGenerateDifference, onDownloa
                     />
                   </td>
                   <td>{row.file_name}</td>
-                  <td>{row.partner_label}</td>
-                  <td>{row.source}</td>
+                  <td>{partnerLabel(row.partner_label || row.partner)}</td>
+                  <td>{sourceLabel(row.source)}</td>
                   <td>{String(row.created_at || '').replace('T', ' ').slice(0, 19)}</td>
                   <td>{row.track_count || 0}</td>
                   <td>
@@ -85,6 +122,13 @@ const ReportsPage = ({ reports, jobs, onRefresh, onGenerateDifference, onDownloa
                       <Download size={16} />
                     </button>
                   </td>
+                  {authUser?.role === 'admin' ? (
+                    <td>
+                      <button className="icon-btn delete-btn" onClick={() => onDeleteReport(row)} title="Delete report">
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  ) : null}
                 </tr>
               ))
             )}
@@ -94,14 +138,46 @@ const ReportsPage = ({ reports, jobs, onRefresh, onGenerateDifference, onDownloa
 
       <div className="reports-jobs">
         <h3>Recent Report Jobs</h3>
-        <ul>
-          {(jobs || []).slice(0, 8).map((job) => (
-            <li key={job.id}>
-              <strong>#{job.id}</strong> {job.job_type} - {job.partner} - <span className={`job-status ${job.status}`}>{job.status}</span>
-              {job.error_message ? ` (${job.error_message})` : ''}
-            </li>
-          ))}
-        </ul>
+        <div className="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Job ID</th>
+                <th>Type</th>
+                <th>Partner</th>
+                <th>Source</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Started</th>
+                <th>Finished</th>
+                <th>Error</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(jobs || []).slice(0, 20).length === 0 ? (
+                <tr>
+                  <td colSpan={9} style={{ textAlign: 'center', padding: '1rem' }}>
+                    No job history available.
+                  </td>
+                </tr>
+              ) : (
+                (jobs || []).slice(0, 20).map((job) => (
+                  <tr key={job.id}>
+                    <td>#{job.id}</td>
+                    <td>{job.job_type}</td>
+                    <td>{partnerLabel(job.partner)}</td>
+                    <td>{sourceLabel(job.source)}</td>
+                    <td><span className={`job-status ${job.status}`}>{job.status}</span></td>
+                    <td>{String(job.created_at || '').replace('T', ' ').slice(0, 19)}</td>
+                    <td>{job.started_at ? String(job.started_at).replace('T', ' ').slice(0, 19) : '-'}</td>
+                    <td>{job.finished_at ? String(job.finished_at).replace('T', ' ').slice(0, 19) : '-'}</td>
+                    <td>{job.error_message || '-'}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

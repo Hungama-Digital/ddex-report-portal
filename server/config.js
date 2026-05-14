@@ -167,7 +167,7 @@ export const CORS_ORIGIN = process.env.CORS_ORIGIN || "http://127.0.0.1:5173";
 export const API_DEBUG = parseBoolean(process.env.API_DEBUG, false);
 export const TOTAL_CONTENT_LIVE_CACHE_TTL_MS = parseInteger(
   process.env.TOTAL_CONTENT_LIVE_CACHE_TTL_MS,
-  300000,
+  1800000,
 );
 
 export const METASEA_DB = {

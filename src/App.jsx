@@ -14,10 +14,12 @@ import NotificationToasts from './components/NotificationToasts';
 import { Sun, Moon, Search, Download, Bell } from 'lucide-react';
 import {
   approvePendingUser,
+  deleteReportById,
   fetchAudioDetailsRows,
   fetchAudioPartnerSummary,
   fetchAudioPartnerTotalContentLive,
   fetchAudioRecentDeliveries,
+  fetchAdminUsers,
   fetchMe,
   fetchNotifications,
   fetchPendingApprovals,
@@ -29,6 +31,7 @@ import {
   queueDifferenceReport,
   queueExportReport,
   rejectPendingUser,
+  revokeAdminUser,
 } from './services/metricsApi';
 import { getPartnerDisplayName } from './utils/partnerDisplay';
 
@@ -101,10 +104,13 @@ function App() {
   const [reportsState, setReportsState] = useState({ loading: false, rows: [] });
   const [jobsState, setJobsState] = useState({ loading: false, rows: [] });
   const [approvalsState, setApprovalsState] = useState({ loading: false, rows: [] });
+  const [adminUsersState, setAdminUsersState] = useState({ loading: false, rows: [] });
 
   const [notificationsState, setNotificationsState] = useState({ unreadCount: 0, rows: [] });
   const seenNotificationRef = useRef(new Set());
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const notificationButtonRef = useRef(null);
+  const notificationTrayRef = useRef(null);
   const [toasts, setToasts] = useState([]);
 
   const [exportActionLoading, setExportActionLoading] = useState(false);
@@ -162,6 +168,7 @@ function App() {
     setAuthUser(null);
     setNotificationsState({ unreadCount: 0, rows: [] });
     setApprovalsState({ loading: false, rows: [] });
+    setAdminUsersState({ loading: false, rows: [] });
   };
 
   useEffect(() => {
@@ -194,7 +201,7 @@ function App() {
             addToast({ title: 'Report Failed', message: item.message, type: 'error' });
           } else if (item.type === 'approval_request' && authUser.role === 'admin') {
             addToast({ title: 'Approval Request', message: item.message, type: 'info' });
-          } else if (item.type === 'approval_granted' || item.type === 'approval_rejected') {
+          } else if ((item.type === 'approval_granted' || item.type === 'approval_rejected') && authUser.role === 'admin') {
             addToast({ title: 'User Approval Update', message: item.message, type: 'info' });
           }
         }
@@ -245,11 +252,17 @@ function App() {
     }
 
     setApprovalsState((previous) => ({ ...previous, loading: true }));
+    setAdminUsersState((previous) => ({ ...previous, loading: true }));
     try {
-      const output = await fetchPendingApprovals();
-      setApprovalsState({ loading: false, rows: output.rows || [] });
+      const [approvalsOutput, usersOutput] = await Promise.all([
+        fetchPendingApprovals(),
+        fetchAdminUsers(),
+      ]);
+      setApprovalsState({ loading: false, rows: approvalsOutput.rows || [] });
+      setAdminUsersState({ loading: false, rows: usersOutput.rows || [] });
     } catch (error) {
       setApprovalsState({ loading: false, rows: [] });
+      setAdminUsersState({ loading: false, rows: [] });
       addToast({ title: 'Admin', message: error?.message || 'Unable to fetch approvals.', type: 'error' });
     }
   }, [authUser, addToast]);
@@ -278,6 +291,19 @@ function App() {
       fetchApprovalsData();
     } catch (error) {
       addToast({ title: 'Admin', message: error?.message || 'Rejection failed.', type: 'error' });
+    }
+  };
+
+  const handleRevokeUser = async (userId) => {
+    if (!window.confirm('Revoke this user access now? They will be logged out immediately.')) {
+      return;
+    }
+    try {
+      await revokeAdminUser(userId);
+      addToast({ title: 'Admin', message: 'User access revoked successfully.', type: 'success' });
+      fetchApprovalsData();
+    } catch (error) {
+      addToast({ title: 'Admin', message: error?.message || 'Failed to revoke access.', type: 'error' });
     }
   };
 
@@ -859,6 +885,26 @@ function App() {
     }
   };
 
+  const handleDeleteReport = async (report) => {
+    if (!report?.id) {
+      return;
+    }
+    if (!window.confirm(`Delete report "${report.file_name}" from server? This action cannot be undone.`)) {
+      return;
+    }
+
+    setExportActionLoading(true);
+    try {
+      await deleteReportById(report.id);
+      addToast({ title: 'Reports', message: 'Report deleted successfully.', type: 'success' });
+      fetchReportsData();
+    } catch (error) {
+      addToast({ title: 'Reports', message: error?.message || 'Unable to delete report.', type: 'error' });
+    } finally {
+      setExportActionLoading(false);
+    }
+  };
+
   const reportNotificationCount = useMemo(
     () =>
       (notificationsState.rows || []).filter(
@@ -891,6 +937,35 @@ function App() {
       await markAllNotificationsRead();
     }
   };
+
+  useEffect(() => {
+    if (!isNotificationOpen) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event) => {
+      const trayEl = notificationTrayRef.current;
+      const buttonEl = notificationButtonRef.current;
+      const target = event.target;
+      if (trayEl?.contains(target) || buttonEl?.contains(target)) {
+        return;
+      }
+      setIsNotificationOpen(false);
+    };
+
+    const handleEsc = (event) => {
+      if (event.key === 'Escape') {
+        setIsNotificationOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEsc);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEsc);
+    };
+  }, [isNotificationOpen]);
 
   if (authLoading) {
     return <div className="app-loading-screen">Loading portal...</div>;
@@ -943,6 +1018,7 @@ function App() {
           <div className="header-actions">
             <button
               className="header-notify-btn"
+              ref={notificationButtonRef}
               onClick={toggleNotifications}
               title="Notifications"
             >
@@ -958,7 +1034,7 @@ function App() {
         </header>
 
         {isNotificationOpen ? (
-          <div className="notification-popover">
+          <div className="notification-popover" ref={notificationTrayRef}>
             <div className="notification-popover-header">
               <h4>Notifications</h4>
               <span>Last 7 days</span>
@@ -969,6 +1045,11 @@ function App() {
               ) : (
                 notificationRows.map((item) => (
                   <div key={item.id} className={`notification-item ${item.readAt ? 'read' : 'unread'}`}>
+                    <span className={`notification-type-pill notification-type-pill--${item.type || 'general'}`}>
+                      {String(item.type || 'notification')
+                        .replaceAll('_', ' ')
+                        .replace(/\b\w/g, (char) => char.toUpperCase())}
+                    </span>
                     <p className="notification-message">{item.message}</p>
                     <span className="notification-time">
                       {String(item.createdAt || '').replace('T', ' ').slice(0, 19)}
@@ -1138,18 +1219,22 @@ function App() {
           <ReportsPage
             reports={reportsState.rows}
             jobs={jobsState.rows}
+            authUser={authUser}
             loading={reportsState.loading || jobsState.loading}
             actionLoading={exportActionLoading}
             onRefresh={fetchReportsData}
             onGenerateDifference={handleGenerateDifference}
             onDownloadReport={handleDownloadReport}
+            onDeleteReport={handleDeleteReport}
           />
         ) : activePage === 'admin' && authUser.role === 'admin' ? (
           <AdminPage
             rows={approvalsState.rows}
-            loading={approvalsState.loading}
+            loading={approvalsState.loading || adminUsersState.loading}
+            activeUsers={adminUsersState.rows}
             onApprove={handleApproveUser}
             onReject={handleRejectUser}
+            onRevoke={handleRevokeUser}
           />
         ) : (
           <div className="settings-container">

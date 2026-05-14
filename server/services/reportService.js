@@ -19,6 +19,7 @@ import {
   getReportById,
   listRecentReports,
   listRecentJobs,
+  removeReportById,
 } from './localStore.js';
 
 const REPORTS_DIR = path.resolve(process.cwd(), 'reports');
@@ -27,7 +28,7 @@ const JSON_DIR = path.join(REPORTS_DIR, 'json');
 
 const SOURCE_LABELS = {
   metasea: 'Metasea',
-  partnerdb: 'RetailerDB',
+  partnerdb: 'Partner DB',
   difference: 'Difference',
 };
 
@@ -60,24 +61,16 @@ function getPartnerLabel(partner) {
   return PARTNER_LABELS[String(partner || '').toLowerCase()] || sanitizeSegment(partner);
 }
 
-function parseTrackIdsCsv(trackIdsCsv) {
-  return String(trackIdsCsv || '')
-    .split(',')
-    .map((part) => part.trim())
-    .filter((part) => /^\d+$/.test(part));
-}
-
 function dedupeTrackRows(rows) {
   const map = new Map();
   for (const row of rows || []) {
     const trackId = String(row.trackId || '').trim();
     const albumId = String(row.albumId || '').trim();
-    if (!trackId || !albumId) {
+    if (!trackId) {
       continue;
     }
-    const key = `${trackId}|${albumId}`;
-    if (!map.has(key)) {
-      map.set(key, {
+    if (!map.has(trackId)) {
+      map.set(trackId, {
         trackId,
         albumId,
         albumName: String(row.albumName || ''),
@@ -105,7 +98,7 @@ async function queryMetaseaTrackRows(partner) {
   }
 
   const sql = `
-    SELECT DISTINCT
+    SELECT DISTINCT ON (trk.content_id)
       trk.content_id::text AS track_id,
       album.content_id::text AS album_id,
       COALESCE(cd.content_title, '') AS album_name,
@@ -131,7 +124,7 @@ async function queryMetaseaTrackRows(partner) {
       AND s.locale_id = 'eng'
       AND s.status IN ('ACTIVE','INACTIVE')
       AND trk.vendor_id IN (13020,544,12515,1324,2526,2106,198,13118,13664,13424,12280,7694,24580,3526,24317,24013,12095,24909,7825,23833,13519,10251,12521,24172,13063,13794,7823,13795,12921,4,13095,3907,5026,10849,13522,1929,24143,24905,7956,7777,4666,24747,13706,23869,6928,13395,25008,24319,13725,12756,12897,6168,8278,24668,13568,24430,496,13388,13354,12994,8344,12495,1428,24161,24203,1476,12993,24596,1887,24647,7539,13716,7710,7933,4046,12977,8672,13166,13824,3546,7847,12395,13322,24693,1627,3506,24679,24829,13331,24454,13141,283,2199,24281,24967,25033,24714,10275,8670,10669,24199,13175,7629,13328,24054,13554,23986,12176,3866,9,10505,23925,24050,11797,24270,12635,13137,2168,7781,10349,2227,8253,546,11014,8761,13774,24748,13252,13536,12928,530,8752,8302,8277,13432,468,10501,6428,24708,13287,24873,24109,2670,13807,7682,8329,3172,13342,8389,13007,13423,1601,24440,24735,13629,13520,2306,24219,13385,4967,13098,24632,2469,343,8293,13339,300,13496,8673,23864,12736,24776,13695,6688,24588,11189,12019,13026,275,12969,24370,24856,502,10510,13262,7747,13644,7540,13566,12741,13346,24274,24360,9328,24414,1338,8336,13154,23972,24449,13456,24194,7732,13624,1639,13212,3666,24009,1509,24871,24476,24583,24850,13433,13298,23887,7410,13802,501,3206,5988,13102,1643,400,3906,7430,2669,5387,24606,1401,1589,24655,13791,24472,1369,24731,285,6068,394,24090,1592,13712,1594,13761,24471,6728,24532,24041,2697,3217,24890,5407,24085,10498,24764,24763,24307,7775,7695,24765,13148,24923,24078,13093,24011,3228,24240,8541,24697,13211,24353,11896,24904,1474,3926,13282,3846,23953,13069,5427,272,24892,23926,8369,19,13360,251,2549,24438,499,8629,1597,13684,1302,24192,23906,24906,7068,5908,13426,24993,24562,24908,23865,24704,5246,10254,24052)
-    ORDER BY track_id ASC
+    ORDER BY trk.content_id, album.content_id
   `;
 
   const pool = getMetaseaPool();
@@ -155,20 +148,27 @@ async function queryPartnerDbTrackRows(partner) {
     throw error;
   }
 
-  const details = await getAudioDetailsRows({
+  const detailOutput = await getAudioDetailsRows({
     partner: partnerKey,
     type: 'live',
-    limit: 300000,
-    bypassCache: true,
+    limit: 1000000,
   });
+  const baseRows = Array.isArray(detailOutput.rows) ? detailOutput.rows : [];
 
   const rows = [];
-  for (const row of details.rows || []) {
-    const trackIds = parseTrackIdsCsv(row.trackIdsCsv);
+  for (const row of baseRows || []) {
+    const albumId = String(row.albumId || '').trim();
+    const trackIds = String(row.trackIdsCsv || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => /^[0-9]+$/.test(item));
+    if (!albumId || !trackIds.length) {
+      continue;
+    }
     for (const trackId of trackIds) {
       rows.push({
         trackId,
-        albumId: String(row.albumId || ''),
+        albumId,
         albumName: String(row.albumName || ''),
         upc: String(row.upc || ''),
       });
@@ -498,4 +498,30 @@ export async function getReportsList({ days = 7 }) {
 
 export async function getJobsList({ limit = 50 }) {
   return listRecentJobs({ limit });
+}
+
+export async function deleteReportAndFiles({ reportId }) {
+  const report = await getReportById(reportId);
+  if (!report) {
+    const error = new Error('Report not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const fileTargets = [report.file_path, report.json_path]
+    .filter(Boolean)
+    .map((target) => path.resolve(target));
+
+  for (const target of fileTargets) {
+    try {
+      if (fs.existsSync(target)) {
+        fs.unlinkSync(target);
+      }
+    } catch (error) {
+      logError('Failed deleting report file', { reportId, target, error: error.message });
+    }
+  }
+
+  await removeReportById(reportId);
+  return { ok: true, reportId };
 }

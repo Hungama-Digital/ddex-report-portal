@@ -239,18 +239,6 @@ export async function createAccessRequest({ username, email }) {
     );
   }
 
-  await db.run(
-    `INSERT INTO notifications (recipient_user_id, type, message, payload_json, created_at)
-     VALUES (?, ?, ?, ?, ?)`,
-    [
-      null,
-      'approval_request',
-      `New user approval request: ${normalizedUsername} (${normalizedEmail})`,
-      JSON.stringify({ userId: insertedId, username: normalizedUsername, email: normalizedEmail }),
-      now,
-    ],
-  );
-
   return { id: insertedId, alreadyPending: false };
 }
 
@@ -384,29 +372,20 @@ export async function approveUser(userId, adminUserId) {
     [nowIso(), nowIso(), id],
   );
 
-  await db.run(
-    `INSERT INTO notifications (recipient_user_id, type, message, payload_json, created_at)
-     VALUES (?, ?, ?, ?, ?)`,
-    [
-      id,
-      'approval_granted',
-      'Your access request has been approved. Please setup your password and login.',
-      JSON.stringify({ approvedBy: adminUserId }),
-      nowIso(),
-    ],
-  );
-
-  await db.run(
-    `INSERT INTO notifications (recipient_user_id, type, message, payload_json, created_at)
-     VALUES (?, ?, ?, ?, ?)`,
-    [
-      null,
-      'approval_granted',
-      `User approved: ${user.username} (${user.email})`,
-      JSON.stringify({ userId: user.id, approvedBy: adminUserId }),
-      nowIso(),
-    ],
-  );
+  const admins = await db.all(`SELECT id FROM users WHERE role = 'admin' AND status = 'approved'`);
+  for (const admin of admins) {
+    await db.run(
+      `INSERT INTO notifications (recipient_user_id, type, message, payload_json, created_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      [
+        admin.id,
+        'approval_granted',
+        `User approved: ${user.username} (${user.email})`,
+        JSON.stringify({ userId: user.id, approvedBy: adminUserId }),
+        nowIso(),
+      ],
+    );
+  }
 
   return { ok: true, user };
 }
@@ -434,29 +413,20 @@ export async function rejectUser(userId, adminUserId) {
     [nowIso(), id],
   );
 
-  await db.run(
-    `INSERT INTO notifications (recipient_user_id, type, message, payload_json, created_at)
-     VALUES (?, ?, ?, ?, ?)`,
-    [
-      id,
-      'approval_rejected',
-      'Your access request has been rejected. Please contact Admin.',
-      JSON.stringify({ rejectedBy: adminUserId }),
-      nowIso(),
-    ],
-  );
-
-  await db.run(
-    `INSERT INTO notifications (recipient_user_id, type, message, payload_json, created_at)
-     VALUES (?, ?, ?, ?, ?)`,
-    [
-      null,
-      'approval_rejected',
-      `User rejected: ${user.username} (${user.email})`,
-      JSON.stringify({ userId: user.id, rejectedBy: adminUserId }),
-      nowIso(),
-    ],
-  );
+  const admins = await db.all(`SELECT id FROM users WHERE role = 'admin' AND status = 'approved'`);
+  for (const admin of admins) {
+    await db.run(
+      `INSERT INTO notifications (recipient_user_id, type, message, payload_json, created_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      [
+        admin.id,
+        'approval_rejected',
+        `User rejected: ${user.username} (${user.email})`,
+        JSON.stringify({ userId: user.id, rejectedBy: adminUserId }),
+        nowIso(),
+      ],
+    );
+  }
 
   return { ok: true, user };
 }
@@ -600,6 +570,11 @@ export async function getReportById(reportId) {
   return db.get(`SELECT * FROM reports WHERE id = ?`, [reportId]);
 }
 
+export async function removeReportById(reportId) {
+  const db = await getStoreDb();
+  await db.run(`DELETE FROM reports WHERE id = ?`, [reportId]);
+}
+
 export async function listRecentReports({ days = 7 } = {}) {
   const db = await getStoreDb();
   const since = new Date(Date.now() - Math.max(Number(days) || 7, 1) * 24 * 60 * 60 * 1000).toISOString();
@@ -622,4 +597,53 @@ export async function listRecentJobs({ limit = 50 } = {}) {
      LIMIT ?`,
     [normalizedLimit],
   );
+}
+
+export async function listActiveUsers() {
+  const db = await getStoreDb();
+  return db.all(
+    `SELECT id, username, email, password_hash, role, status, created_at, approved_at, updated_at
+     FROM users
+     WHERE status = 'approved'
+     ORDER BY created_at DESC`,
+  );
+}
+
+export async function revokeUserAccess(userId) {
+  const db = await getStoreDb();
+  const normalizedId = Number.parseInt(String(userId), 10);
+  if (!Number.isInteger(normalizedId) || normalizedId <= 0) {
+    const error = new Error('Invalid user id.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const user = await db.get(
+    `SELECT id, username, role, status
+     FROM users
+     WHERE id = ?`,
+    [normalizedId],
+  );
+
+  if (!user) {
+    const error = new Error('User not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (user.role === 'admin') {
+    const error = new Error('Admin access cannot be revoked from this screen.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  await db.run(
+    `UPDATE users
+     SET status = 'revoked', updated_at = ?
+     WHERE id = ?`,
+    [nowIso(), normalizedId],
+  );
+  await db.run(`DELETE FROM sessions WHERE user_id = ?`, [normalizedId]);
+
+  return { ok: true, user };
 }

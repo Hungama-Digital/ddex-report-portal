@@ -20,15 +20,17 @@ import {
   createAccessRequest,
   deleteSession,
   getStoreDb,
-  getUnreadNotificationCount,
+  listActiveUsers,
   listNotificationsForUser,
   listPendingApprovals,
   loginUser,
   markNotificationRead,
+  revokeUserAccess,
   rejectUser,
   setupUserPassword,
 } from './services/localStore.js';
 import {
+  deleteReportAndFiles,
   getJobsList,
   getReportsList,
   queueDifferenceJob,
@@ -155,7 +157,21 @@ app.post('/api/auth/login', async (req, res, next) => {
 app.use(authOptional);
 
 app.get('/api/auth/me', requireAuth, async (req, res) => {
-  const unreadCount = await getUnreadNotificationCount(req.authUser.id, { days: 7 });
+  const isAdmin = String(req.authUser.role || '').toLowerCase() === 'admin';
+  const notifications = await listNotificationsForUser(req.authUser.id, {
+    includeRead: false,
+    limit: 200,
+    days: 7,
+  });
+  const filteredNotifications = isAdmin
+    ? notifications
+    : notifications.filter(
+        (item) =>
+          item.type !== 'approval_request' &&
+          item.type !== 'approval_granted' &&
+          item.type !== 'approval_rejected',
+      );
+  const unreadCount = filteredNotifications.length;
   res.json({
     ok: true,
     user: {
@@ -187,12 +203,24 @@ app.get('/api/notifications', requireAuth, async (req, res, next) => {
       limit,
       days,
     });
-    const unreadCount = await getUnreadNotificationCount(req.authUser.id, { days });
+    const isAdmin = String(req.authUser.role || '').toLowerCase() === 'admin';
+    const filteredNotifications = isAdmin
+      ? notifications
+      : notifications.filter(
+          (item) =>
+            item.type !== 'approval_request' &&
+            item.type !== 'approval_granted' &&
+            item.type !== 'approval_rejected',
+        );
+    const unreadCount = filteredNotifications.reduce(
+      (count, item) => count + (item.read_at ? 0 : 1),
+      0,
+    );
 
     res.json({
       ok: true,
       unreadCount,
-      notifications: notifications.map((item) => ({
+      notifications: filteredNotifications.map((item) => ({
         id: item.id,
         type: item.type,
         message: item.message,
@@ -209,7 +237,20 @@ app.get('/api/notifications', requireAuth, async (req, res, next) => {
 app.post('/api/notifications/:id/read', requireAuth, async (req, res, next) => {
   try {
     await markNotificationRead(req.params.id, req.authUser.id);
-    const unreadCount = await getUnreadNotificationCount(req.authUser.id);
+    const isAdmin = String(req.authUser.role || '').toLowerCase() === 'admin';
+    const unreadRows = await listNotificationsForUser(req.authUser.id, {
+      includeRead: false,
+      limit: 200,
+      days: 7,
+    });
+    const unreadCount = isAdmin
+      ? unreadRows.length
+      : unreadRows.filter(
+          (item) =>
+            item.type !== 'approval_request' &&
+            item.type !== 'approval_granted' &&
+            item.type !== 'approval_rejected',
+        ).length;
     res.json({ ok: true, unreadCount });
   } catch (error) {
     next(error);
@@ -246,6 +287,37 @@ app.post('/api/admin/approvals/:id/reject', requireAdmin, async (req, res, next)
   try {
     const output = await rejectUser(req.params.id, req.authUser.id);
     res.json({ ok: true, user: output.user });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/admin/users', requireAdmin, async (_req, res, next) => {
+  try {
+    const rows = await listActiveUsers();
+    res.json({
+      ok: true,
+      rows: rows.map((row) => ({
+        id: row.id,
+        name: row.username,
+        username: row.username,
+        email: row.email,
+        passwordHash: row.password_hash || '',
+        role: row.role,
+        status: row.status,
+        createdAt: row.created_at,
+        approvedAt: row.approved_at,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/admin/users/:id/revoke', requireAdmin, async (req, res, next) => {
+  try {
+    const output = await revokeUserAccess(req.params.id);
+    res.json(output);
   } catch (error) {
     next(error);
   }
@@ -304,6 +376,15 @@ app.get('/api/reports/:id/download', requireAuth, async (req, res, next) => {
     }
 
     res.download(path.resolve(report.file_path), report.file_name);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/reports/:id', requireAdmin, async (req, res, next) => {
+  try {
+    const output = await deleteReportAndFiles({ reportId: req.params.id });
+    res.json(output);
   } catch (error) {
     next(error);
   }

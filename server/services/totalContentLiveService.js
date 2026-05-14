@@ -343,42 +343,15 @@ async function queryPartnerDbTotalTracks({ contents, push }) {
     contentsTable: contents,
     pushTable: push,
   });
-
-  const contentsTable = escapeMysqlIdentifier(contents);
-  const pushTable = escapeMysqlIdentifier(push);
-  const sql = `
-    SELECT COALESCE(
-      SUM(
-        CASE
-          WHEN c.TRACK_IDS IS NOT NULL
-            AND c.TRACK_IDS != ''
-            AND JSON_VALID(c.TRACK_IDS) = 1
-          THEN JSON_LENGTH(c.TRACK_IDS)
-          ELSE 0
-        END
-      ),
-      0
-    ) AS total_track_count
-    FROM ${contentsTable} c
-    INNER JOIN (
-      SELECT ALBUM_ID, MAX(ADDED_ON) AS max_added_on
-      FROM ${contentsTable}
-      WHERE DDEX_TYPE IN ('AUDIO_ALBUM_INSERT', 'AUDIO_ALBUM_UPDATE', 'AUDIO_ALBUM_TAKEDOWN')
-      GROUP BY ALBUM_ID
-    ) latest
-      ON latest.ALBUM_ID = c.ALBUM_ID
-     AND latest.max_added_on = c.ADDED_ON
-    INNER JOIN ${pushTable} p
-      ON p.BATCH_ID = c.BATCH_ID
-     AND p.STATUS = 1
-    WHERE c.DDEX_TYPE IN ('AUDIO_ALBUM_INSERT', 'AUDIO_ALBUM_UPDATE')
-      AND c.STATUS = 1;
-  `;
-
-  const b2bPool = getB2BPool();
-  const [rows] = await b2bPool.query(sql);
-  const rawCount = rows?.[0]?.total_track_count ?? 0;
-  const count = Number(rawCount) || 0;
+  const rows = await queryPartnerDbLiveRows({
+    partnerKey: "summary",
+    tables: { contents, push },
+    limit: 1000000,
+  });
+  const count = (rows || []).reduce(
+    (sum, row) => sum + (Number(row.trackCount) || 0),
+    0,
+  );
   logDebug("Partner-db total-content-live query completed", {
     contentsTable: contents,
     pushTable: push,
@@ -1348,11 +1321,15 @@ async function executeAudioRecentDeliveries({ partner, bounds, limit }) {
   );
 
   const fulfilled = [];
+  const partnerRowsMap = new Map();
   let successfulPartnerQueries = 0;
-  for (const result of deliveriesPerPartner) {
+  for (let index = 0; index < deliveriesPerPartner.length; index += 1) {
+    const result = deliveriesPerPartner[index];
+    const partnerKey = partnerKeys[index];
     if (result.status === "fulfilled") {
       successfulPartnerQueries += 1;
       fulfilled.push(...result.value);
+      partnerRowsMap.set(partnerKey, result.value || []);
       continue;
     }
     logError("Partner-db recent-deliveries query failed", {
@@ -1396,7 +1373,7 @@ async function executeAudioRecentDeliveries({ partner, bounds, limit }) {
   });
 
   const enrichedRows = await enrichRowsWithAlbumMetadata(topRows);
-  return {
+  const payload = {
     partner: String(partner || "").toLowerCase(),
     limit,
     dateRange: {
@@ -1405,6 +1382,30 @@ async function executeAudioRecentDeliveries({ partner, bounds, limit }) {
     },
     rows: enrichedRows,
   };
+
+  if (shouldMergeAllPartners) {
+    for (const [partnerKey, rows] of partnerRowsMap.entries()) {
+      const partnerPayload = {
+        partner: partnerKey,
+        limit,
+        dateRange: payload.dateRange,
+        rows: await enrichRowsWithAlbumMetadata((rows || []).slice(0, limit)),
+      };
+      const partnerCacheKey = getRecentDeliveriesCacheKey(
+        partnerKey,
+        bounds,
+        limit,
+      );
+      setCached(audioRecentDeliveriesCache, partnerCacheKey, partnerPayload);
+      logDebug("Recent-deliveries partner cache primed from all-partners query", {
+        partner: partnerKey,
+        cacheKey: partnerCacheKey,
+        rows: partnerPayload.rows.length,
+      });
+    }
+  }
+
+  return payload;
 }
 
 export async function getAudioRecentDeliveries({
@@ -1504,11 +1505,15 @@ async function executeAudioDetailsRows({ partner, type, bounds, limit }) {
 
   const results = await Promise.allSettled(queryPromises);
   const mergedRows = [];
+  const partnerRowsMap = new Map();
   let successfulPartnerQueries = 0;
-  for (const result of results) {
+  for (let index = 0; index < results.length; index += 1) {
+    const result = results[index];
+    const partnerKey = partnerKeys[index];
     if (result.status === "fulfilled") {
       successfulPartnerQueries += 1;
       mergedRows.push(...result.value);
+      partnerRowsMap.set(partnerKey, result.value || []);
       continue;
     }
     logError("Audio details rows query failed", {
@@ -1550,7 +1555,7 @@ async function executeAudioDetailsRows({ partner, type, bounds, limit }) {
     partnerCount: partnerKeys.length,
   });
 
-  return {
+  const payload = {
     partner: String(partner || "").toLowerCase(),
     type,
     limit,
@@ -1562,6 +1567,33 @@ async function executeAudioDetailsRows({ partner, type, bounds, limit }) {
       : null,
     rows: enrichedRows,
   };
+
+  if (shouldMergeAllPartners) {
+    for (const [partnerKey, partnerRows] of partnerRowsMap.entries()) {
+      const partnerPayload = {
+        partner: partnerKey,
+        type,
+        limit,
+        dateRange: payload.dateRange,
+        rows: await enrichRowsWithAlbumMetadata((partnerRows || []).slice(0, limit)),
+      };
+      const partnerCacheKey = getDetailsRowsCacheKey({
+        partner: partnerKey,
+        type,
+        bounds,
+        limit,
+      });
+      setCached(audioDetailsRowsCache, partnerCacheKey, partnerPayload);
+      logDebug("Audio-details partner cache primed from all-partners query", {
+        partner: partnerKey,
+        type,
+        cacheKey: partnerCacheKey,
+        rows: partnerPayload.rows.length,
+      });
+    }
+  }
+
+  return payload;
 }
 
 export async function getAudioDetailsRows({
@@ -1580,7 +1612,7 @@ export async function getAudioDetailsRows({
   }
 
   const parsedType = parseReportType(type);
-  const parsedLimit = parsePositiveInteger(limit, 100000, { min: 1, max: 300000 });
+  const parsedLimit = parsePositiveInteger(limit, 100000, { min: 1, max: 1000000 });
   const bounds =
     parsedType === "live" ? null : parseDateRangeBounds(startDate, endDate);
 
