@@ -1,5 +1,3 @@
-import { formatDateTimeIst } from '../utils/time';
-
 const AdminPage = ({ rows, activeUsers, loading, onApprove, onReject, onRevoke }) => {
   const approvals = Array.isArray(rows) ? rows : [];
   const users = Array.isArray(activeUsers) ? activeUsers : [];
@@ -32,7 +30,7 @@ const AdminPage = ({ rows, activeUsers, loading, onApprove, onReject, onRevoke }
                 <tr key={row.id}>
                   <td>{row.username}</td>
                   <td>{row.email}</td>
-                  <td>{formatDateTimeIst(row.createdAt)}</td>
+                  <td>{row.createdAt || '-'}</td>
                   <td>
                     <div className="admin-actions">
                       <button className="approve-btn" onClick={() => onApprove(row.id)}>Approve</button>
@@ -80,7 +78,7 @@ const AdminPage = ({ rows, activeUsers, loading, onApprove, onReject, onRevoke }
                     <td>{user.email}</td>
                     <td className="admin-hash-cell">{user.passwordHash || '-'}</td>
                     <td>{isAdmin ? 'Admin' : 'User'}</td>
-                    <td>{user.approvedAt ? formatDateTimeIst(user.approvedAt) : '-'}</td>
+                    <td>{user.approvedAt || '-'}</td>
                     <td>
                       {isAdmin ? (
                         <span className="admin-role-note">Primary Admin</span>

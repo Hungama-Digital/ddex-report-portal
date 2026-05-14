@@ -12,7 +12,6 @@ import AdminPage from './components/AdminPage';
 import ConfirmDialog from './components/ConfirmDialog';
 import NotificationToasts from './components/NotificationToasts';
 import { Sun, Moon, Search, Download, Bell } from 'lucide-react';
-import { formatDateTimeIst } from './utils/time';
 import {
   approvePendingUser,
   deleteReportById,
@@ -61,6 +60,14 @@ const EMPTY_AUDIO_DETAILS_ROWS = {
   rows: [],
 };
 
+const EMPTY_AUDIO_PERIOD_METRICS = {
+  queryKey: null,
+  status: 'idle',
+  error: null,
+  deliveredInPeriod: 0,
+  takenDownInPeriod: 0,
+};
+
 const NOTIFICATION_POLL_INTERVAL_MS = 60000;
 const NOTIFICATION_TOAST_QUIET_PERIOD_MS = 45000;
 const AUDIO_DETAILS_FETCH_LIMIT = 10000;
@@ -102,6 +109,7 @@ function App() {
   const [authLoading, setAuthLoading] = useState(true);
 
   const [audioSummary, setAudioSummary] = useState(EMPTY_AUDIO_SUMMARY);
+  const [audioPeriodMetrics, setAudioPeriodMetrics] = useState(EMPTY_AUDIO_PERIOD_METRICS);
   const [recentDeliveriesState, setRecentDeliveriesState] = useState(EMPTY_RECENT_DELIVERIES);
   const [audioDetailsRowsState, setAudioDetailsRowsState] = useState(EMPTY_AUDIO_DETAILS_ROWS);
   const [dashboardRecentSearchTerm, setDashboardRecentSearchTerm] = useState('');
@@ -359,12 +367,19 @@ function App() {
     return null;
   }, [dashboardMode, selectedPartner, isAudioPartnerSelected]);
 
-  const currentAudioSummaryKey = useMemo(() => {
+  const currentAudioLiveKey = useMemo(() => {
     if (!shouldLoadAudioMetrics) {
       return null;
     }
-    return `${selectedPartner}|${startDate}|${endDate}|audio-summary`;
-  }, [shouldLoadAudioMetrics, selectedPartner, startDate, endDate]);
+    return `${selectedPartner}|audio-live`;
+  }, [shouldLoadAudioMetrics, selectedPartner]);
+
+  const currentAudioPeriodKey = useMemo(() => {
+    if (!shouldLoadAudioMetrics || !hasValidDateRange) {
+      return null;
+    }
+    return `${selectedPartner}|${startDate}|${endDate}|audio-period`;
+  }, [shouldLoadAudioMetrics, hasValidDateRange, selectedPartner, startDate, endDate]);
 
   const currentRecentDeliveriesKey = useMemo(() => {
     if (!recentDeliveriesPartner) {
@@ -375,16 +390,16 @@ function App() {
   }, [recentDeliveriesPartner, startDate, endDate]);
 
   const isAudioSummaryLoading =
-    Boolean(currentAudioSummaryKey) &&
-    audioSummary.queryKey === currentAudioSummaryKey &&
+    Boolean(currentAudioLiveKey) &&
+    audioSummary.queryKey === currentAudioLiveKey &&
     audioSummary.status === 'loading';
 
   const isAudioSummaryReady =
-    audioSummary.queryKey === currentAudioSummaryKey &&
+    audioSummary.queryKey === currentAudioLiveKey &&
     audioSummary.status === 'success';
 
   const audioSummaryError =
-    audioSummary.queryKey === currentAudioSummaryKey && audioSummary.status === 'error'
+    audioSummary.queryKey === currentAudioLiveKey && audioSummary.status === 'error'
       ? audioSummary.error
       : null;
 
@@ -405,69 +420,53 @@ function App() {
   }, [isDarkMode]);
 
   useEffect(() => {
-    if (!authUser || !currentAudioSummaryKey) {
+    if (!authUser || !currentAudioLiveKey) {
       return;
     }
 
     const abortController = new AbortController();
     setAudioSummary((previous) => ({
       ...previous,
-      queryKey: currentAudioSummaryKey,
+      queryKey: currentAudioLiveKey,
       status: 'loading',
       error: null,
     }));
 
-    const allPartnersPromise = isAllAudioPartnersSelected
-      ? Promise.all(
+    const livePromise = isAllAudioPartnersSelected
+      ? Promise.allSettled(
           audioPartners.map((partner) =>
-            hasValidDateRange
-              ? fetchAudioPartnerSummary({
-                  partner: partner.id,
-                  startDate,
-                  endDate,
-                  signal: abortController.signal,
-                })
-              : fetchAudioPartnerTotalContentLive({
-                  partner: partner.id,
-                  signal: abortController.signal,
-                }),
+            fetchAudioPartnerTotalContentLive({
+              partner: partner.id,
+              signal: abortController.signal,
+            }),
           ),
         ).then((responses) => {
-          const summaries = responses.filter(Boolean);
+          const summaries = responses
+            .filter((item) => item.status === 'fulfilled')
+            .map((item) => item.value)
+            .filter(Boolean);
+          if (summaries.length === 0) {
+            throw new Error('Unable to fetch live counts for partners.');
+          }
           return summaries.reduce(
             (acc, item) => ({
               metasea: acc.metasea + (Number(item.metasea) || 0),
               partnerDb: acc.partnerDb + (Number(item.partnerDb) || 0),
               total: acc.total + (Number(item.total) || 0),
-              deliveredInPeriod: acc.deliveredInPeriod + (Number(item.deliveredInPeriod) || 0),
-              takenDownInPeriod: acc.takenDownInPeriod + (Number(item.takenDownInPeriod) || 0),
             }),
             {
               metasea: 0,
               partnerDb: 0,
               total: 0,
-              deliveredInPeriod: 0,
-              takenDownInPeriod: 0,
             },
           );
         })
-      : hasValidDateRange
-        ? fetchAudioPartnerSummary({
-            partner: selectedPartner,
-            startDate,
-            endDate,
-            signal: abortController.signal,
-          })
-        : fetchAudioPartnerTotalContentLive({
-            partner: selectedPartner,
-            signal: abortController.signal,
-          }).then((item) => ({
-            ...item,
-            deliveredInPeriod: 0,
-            takenDownInPeriod: 0,
-          }));
+      : fetchAudioPartnerTotalContentLive({
+          partner: selectedPartner,
+          signal: abortController.signal,
+        });
 
-    allPartnersPromise
+    livePromise
       .then((response) => {
         if (abortController.signal.aborted) {
           return;
@@ -475,14 +474,14 @@ function App() {
 
         const summary = response || EMPTY_AUDIO_SUMMARY;
         setAudioSummary({
-          queryKey: currentAudioSummaryKey,
+          queryKey: currentAudioLiveKey,
           status: 'success',
           error: null,
           metasea: Number(summary.metasea) || 0,
           partnerDb: Number(summary.partnerDb) || 0,
           total: Number(summary.total) || 0,
-          deliveredInPeriod: Number(summary.deliveredInPeriod) || 0,
-          takenDownInPeriod: Number(summary.takenDownInPeriod) || 0,
+          deliveredInPeriod: 0,
+          takenDownInPeriod: 0,
         });
       })
       .catch((error) => {
@@ -492,16 +491,103 @@ function App() {
 
         setAudioSummary({
           ...EMPTY_AUDIO_SUMMARY,
-          queryKey: currentAudioSummaryKey,
+          queryKey: currentAudioLiveKey,
           status: 'error',
-          error: error?.message || 'Unable to load audio partner metrics.',
+          error: error?.message || 'Unable to load live counts.',
         });
       });
 
     return () => {
       abortController.abort();
     };
-  }, [currentAudioSummaryKey, selectedPartner, startDate, endDate, isAllAudioPartnersSelected, hasValidDateRange, authUser]);
+  }, [currentAudioLiveKey, selectedPartner, isAllAudioPartnersSelected, authUser]);
+
+  useEffect(() => {
+    if (!authUser || !currentAudioPeriodKey || !isAudioSummaryReady) {
+      return;
+    }
+
+    const abortController = new AbortController();
+    setAudioPeriodMetrics({
+      queryKey: currentAudioPeriodKey,
+      status: 'loading',
+      error: null,
+      deliveredInPeriod: 0,
+      takenDownInPeriod: 0,
+    });
+
+    const periodPromise = isAllAudioPartnersSelected
+      ? Promise.allSettled(
+          audioPartners.map((partner) =>
+            fetchAudioPartnerSummary({
+              partner: partner.id,
+              startDate,
+              endDate,
+              signal: abortController.signal,
+            }),
+          ),
+        ).then((responses) => {
+          const summaries = responses
+            .filter((item) => item.status === 'fulfilled')
+            .map((item) => item.value)
+            .filter(Boolean);
+          if (summaries.length === 0) {
+            throw new Error('Unable to fetch period metrics for partners.');
+          }
+          return summaries.reduce(
+            (acc, item) => ({
+              deliveredInPeriod: acc.deliveredInPeriod + (Number(item.deliveredInPeriod) || 0),
+              takenDownInPeriod: acc.takenDownInPeriod + (Number(item.takenDownInPeriod) || 0),
+            }),
+            { deliveredInPeriod: 0, takenDownInPeriod: 0 },
+          );
+        })
+      : fetchAudioPartnerSummary({
+          partner: selectedPartner,
+          startDate,
+          endDate,
+          signal: abortController.signal,
+        });
+
+    periodPromise
+      .then((response) => {
+        if (abortController.signal.aborted) {
+          return;
+        }
+        const summary = response || {};
+        setAudioPeriodMetrics({
+          queryKey: currentAudioPeriodKey,
+          status: 'success',
+          error: null,
+          deliveredInPeriod: Number(summary.deliveredInPeriod) || 0,
+          takenDownInPeriod: Number(summary.takenDownInPeriod) || 0,
+        });
+      })
+      .catch((error) => {
+        if (abortController.signal.aborted || error?.name === 'AbortError') {
+          return;
+        }
+        setAudioPeriodMetrics({
+          queryKey: currentAudioPeriodKey,
+          status: 'error',
+          error: error?.message || 'Unable to load date-range metrics.',
+          deliveredInPeriod: 0,
+          takenDownInPeriod: 0,
+        });
+      });
+
+    return () => {
+      abortController.abort();
+    };
+  }, [
+    currentAudioPeriodKey,
+    selectedPartner,
+    isAllAudioPartnersSelected,
+    startDate,
+    endDate,
+    isAudioSummaryReady,
+    authUser,
+  ]);
 
   const { totalLiveArr, deliveredArr, takenDownArr } = useMemo(() => {
     let data = activePage === 'video-reports' ? videoContents : audioContents;
@@ -525,10 +611,24 @@ function App() {
     return { totalLiveArr: live, deliveredArr: delivered, takenDownArr: takenDown };
   }, [selectedPartner, startDate, endDate, activePage]);
 
-  const shouldUseDbMetricsForAudio = Boolean(currentAudioSummaryKey) && isAudioSummaryReady;
+  const shouldUseDbMetricsForAudio = Boolean(currentAudioLiveKey) && isAudioSummaryReady;
+  const isAudioPeriodReady =
+    Boolean(currentAudioPeriodKey) &&
+    audioPeriodMetrics.queryKey === currentAudioPeriodKey &&
+    audioPeriodMetrics.status === 'success';
+  const isAudioPeriodLoading =
+    Boolean(currentAudioPeriodKey) &&
+    audioPeriodMetrics.queryKey === currentAudioPeriodKey &&
+    audioPeriodMetrics.status === 'loading';
+  const audioPeriodError =
+    Boolean(currentAudioPeriodKey) &&
+    audioPeriodMetrics.queryKey === currentAudioPeriodKey &&
+    audioPeriodMetrics.status === 'error'
+      ? audioPeriodMetrics.error
+      : null;
 
   useEffect(() => {
-    if (!authUser || !currentRecentDeliveriesKey || !recentDeliveriesPartner) {
+    if (!authUser || !currentRecentDeliveriesKey || !recentDeliveriesPartner || !isAudioSummaryReady) {
       return;
     }
 
@@ -586,7 +686,7 @@ function App() {
     return () => {
       abortController.abort();
     };
-  }, [currentRecentDeliveriesKey, recentDeliveriesPartner, startDate, endDate, hasValidDateRange, authUser]);
+  }, [currentRecentDeliveriesKey, recentDeliveriesPartner, startDate, endDate, hasValidDateRange, isAudioSummaryReady, authUser]);
 
   const currentAudioDetailsKey = useMemo(() => {
     if (activePage !== 'audio-reports' || !isAudioSelectionSupported) {
@@ -600,7 +700,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!authUser || !currentAudioDetailsKey) {
+    if (!authUser || !currentAudioDetailsKey || !isAudioSummaryReady) {
       return;
     }
 
@@ -664,12 +764,12 @@ function App() {
     return () => {
       abortController.abort();
     };
-  }, [activeTab, selectedPartner, startDate, endDate, currentAudioDetailsKey, hasValidDateRange, detailsLimit, authUser]);
+  }, [activeTab, selectedPartner, startDate, endDate, currentAudioDetailsKey, hasValidDateRange, detailsLimit, isAudioSummaryReady, authUser]);
 
   const stats = {
     totalLive: shouldUseDbMetricsForAudio ? audioSummary.total : 0,
-    deliveredThisMonth: shouldUseDbMetricsForAudio ? audioSummary.deliveredInPeriod : 0,
-    takenDownThisMonth: shouldUseDbMetricsForAudio ? audioSummary.takenDownInPeriod : 0,
+    deliveredThisMonth: isAudioPeriodReady ? audioPeriodMetrics.deliveredInPeriod : 0,
+    takenDownThisMonth: isAudioPeriodReady ? audioPeriodMetrics.takenDownInPeriod : 0,
   };
 
   const dashboardStats = useMemo(() => {
@@ -694,11 +794,17 @@ function App() {
       ...computedStats,
       audio: {
         totalLive: audioSummary.total,
-        deliveredThisMonth: audioSummary.deliveredInPeriod,
-        takenDownThisMonth: audioSummary.takenDownInPeriod,
+        deliveredThisMonth: isAudioPeriodReady ? audioPeriodMetrics.deliveredInPeriod : 0,
+        takenDownThisMonth: isAudioPeriodReady ? audioPeriodMetrics.takenDownInPeriod : 0,
       },
     };
-  }, [shouldUseDbMetricsForAudio, audioSummary.total, audioSummary.deliveredInPeriod, audioSummary.takenDownInPeriod]);
+  }, [
+    shouldUseDbMetricsForAudio,
+    audioSummary.total,
+    isAudioPeriodReady,
+    audioPeriodMetrics.deliveredInPeriod,
+    audioPeriodMetrics.takenDownInPeriod,
+  ]);
 
   const shouldUseLiveRecentDeliveries =
     dashboardMode !== 'video' &&
@@ -796,15 +902,27 @@ function App() {
   }, [selectedPartner]);
 
   const shouldShowAudioMetricsLoading =
-    Boolean(currentAudioSummaryKey) &&
+    Boolean(currentAudioLiveKey) &&
     isAudioSummaryLoading &&
     (activePage === 'audio-reports' || (activePage === 'dashboard' && dashboardMode !== 'video'));
 
   const shouldShowAudioMetricsError =
-    Boolean(currentAudioSummaryKey) &&
+    Boolean(currentAudioLiveKey) &&
     audioSummaryError &&
     (activePage === 'audio-reports' || (activePage === 'dashboard' && dashboardMode !== 'video'))
       ? audioSummaryError
+      : null;
+
+  const shouldShowAudioPeriodLoading =
+    Boolean(currentAudioPeriodKey) &&
+    isAudioPeriodLoading &&
+    (activePage === 'audio-reports' || (activePage === 'dashboard' && dashboardMode !== 'video'));
+
+  const shouldShowAudioPeriodError =
+    Boolean(currentAudioPeriodKey) &&
+    audioPeriodError &&
+    (activePage === 'audio-reports' || (activePage === 'dashboard' && dashboardMode !== 'video'))
+      ? audioPeriodError
       : null;
 
   const handleOpenExportConfirm = (source) => {
@@ -1069,7 +1187,7 @@ function App() {
                     </span>
                     <p className="notification-message">{item.message}</p>
                     <span className="notification-time">
-                      {formatDateTimeIst(item.createdAt)}
+                      {item.createdAt || '-'}
                     </span>
                   </div>
                 ))
@@ -1114,6 +1232,8 @@ function App() {
               liveBreakdown={dashboardMode !== 'video' ? liveBreakdown : null}
               metricsLoading={shouldShowAudioMetricsLoading}
               metricsError={shouldShowAudioMetricsError}
+              periodLoading={shouldShowAudioPeriodLoading}
+              periodError={shouldShowAudioPeriodError}
               startDate={startDate}
               endDate={endDate}
             />
@@ -1170,7 +1290,7 @@ function App() {
                           <td style={{ fontWeight: 500 }}>{item.albumId || '-'}</td>
                           <td>{item.albumName || '-'}</td>
                           <td>{item.upc || '-'}</td>
-                          <td>{item.addedOn ? formatDateTimeIst(item.addedOn) : '-'}</td>
+                          <td>{item.addedOn || '-'}</td>
                           <td>{item.batchId || '-'}</td>
                           <td>
                             <div className="track-ids-cell" title={item.trackIdsCsv || '-'}>
@@ -1204,6 +1324,8 @@ function App() {
               liveBreakdown={activePage === 'audio-reports' ? liveBreakdown : null}
               metricsLoading={activePage === 'audio-reports' ? shouldShowAudioMetricsLoading : false}
               metricsError={activePage === 'audio-reports' ? shouldShowAudioMetricsError : null}
+              periodLoading={activePage === 'audio-reports' ? shouldShowAudioPeriodLoading : false}
+              periodError={activePage === 'audio-reports' ? shouldShowAudioPeriodError : null}
               startDate={startDate}
               endDate={endDate}
               liveActions={

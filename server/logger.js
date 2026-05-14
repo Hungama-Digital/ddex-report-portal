@@ -1,23 +1,5 @@
 import { API_DEBUG } from "./config.js";
 
-const IST_TIMEZONE = "Asia/Kolkata";
-
-function formatIstTimestamp(date = new Date()) {
-  const formatter = new Intl.DateTimeFormat("en-IN", {
-    timeZone: IST_TIMEZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-  const parts = formatter.formatToParts(date);
-  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${map.year}-${map.month}-${map.day}T${map.hour}:${map.minute}:${map.second}+05:30`;
-}
-
 function formatMetadata(metadata = {}) {
   if (!metadata || typeof metadata !== "object") {
     return "";
@@ -34,7 +16,7 @@ function formatMetadata(metadata = {}) {
 }
 
 function log(level, message, metadata) {
-  const timestamp = formatIstTimestamp();
+  const timestamp = new Date().toISOString();
   const line = `[${timestamp}] [${level}] ${message}${formatMetadata(metadata)}`;
   if (level === "ERROR") {
     console.error(line);

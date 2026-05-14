@@ -11,6 +11,8 @@ const SummaryCards = ({
   liveBreakdown,
   metricsLoading = false,
   metricsError = null,
+  periodLoading = false,
+  periodError = null,
   startDate,
   endDate,
   liveActions = null,
@@ -91,7 +93,7 @@ const SummaryCards = ({
   };
 
   const renderValue = (key) => {
-    if (metricsLoading) {
+    if (periodLoading) {
       return renderLoadingValue();
     }
     const value = key === 'deliveredThisMonth' ? deliveredCount : takenDownCount;
@@ -99,7 +101,7 @@ const SummaryCards = ({
   };
 
   const renderPeriodMiniChart = ({ label, count, strokeColor, gradientId }) => {
-    if (metricsLoading || metricsError) {
+    if (periodLoading || periodError) {
       return null;
     }
 
@@ -249,7 +251,11 @@ const SummaryCards = ({
       icon: <ArrowUp size={24} />,
       subtitle: metricsLoading
         ? 'Query in progress for selected date range'
-        : (isDashboard ? getBreakdown('deliveredThisMonth') : `Derived from ${dateRangeLabel}`),
+        : periodLoading
+          ? 'Loading delivered count for selected date range...'
+          : periodError
+            ? periodError
+            : (isDashboard ? getBreakdown('deliveredThisMonth') : `Derived from ${dateRangeLabel}`),
       kind: 'delivered',
       footerChart: renderPeriodMiniChart({
         label: 'Delivered Trend',
@@ -265,7 +271,11 @@ const SummaryCards = ({
       icon: <ArrowDown size={24} />,
       subtitle: metricsLoading
         ? 'Query in progress for selected date range'
-        : (isDashboard ? getBreakdown('takenDownThisMonth') : `Derived from ${dateRangeLabel}`),
+        : periodLoading
+          ? 'Loading taken down count for selected date range...'
+          : periodError
+            ? periodError
+            : (isDashboard ? getBreakdown('takenDownThisMonth') : `Derived from ${dateRangeLabel}`),
       kind: 'taken',
       footerChart: renderPeriodMiniChart({
         label: 'Taken Down Trend',
