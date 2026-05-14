@@ -11,13 +11,11 @@ import ReportsPage from './components/ReportsPage';
 import AdminPage from './components/AdminPage';
 import ConfirmDialog from './components/ConfirmDialog';
 import NotificationToasts from './components/NotificationToasts';
-import QueryDebugPanel from './components/QueryDebugPanel';
 import { Sun, Moon, Search, Download, Bell } from 'lucide-react';
 import {
   approvePendingUser,
   deleteReportById,
   fetchAudioDetailsRows,
-  fetchAudioPartnerDebugQueries,
   fetchAudioPartnerPeriodMetrics,
   fetchAudioPartnerSummary,
   fetchAudioPartnerTotalContentLive,
@@ -121,8 +119,6 @@ function App() {
   const [jobsState, setJobsState] = useState({ loading: false, rows: [] });
   const [approvalsState, setApprovalsState] = useState({ loading: false, rows: [] });
   const [adminUsersState, setAdminUsersState] = useState({ loading: false, rows: [] });
-  const [debugQueriesState, setDebugQueriesState] = useState({ loading: false, error: null, payload: null });
-  const [debugRefreshNonce, setDebugRefreshNonce] = useState(0);
 
   const [notificationsState, setNotificationsState] = useState({ unreadCount: 0, rows: [] });
   const seenNotificationRef = useRef(new Set());
@@ -351,9 +347,6 @@ function App() {
   const shouldLoadAudioMetrics =
     (activePage === 'audio-reports' || (activePage === 'dashboard' && dashboardMode !== 'video')) &&
     isAudioSelectionSupported;
-  const shouldShowQueryDebugPanel =
-    isAudioSelectionSupported &&
-    (activePage === 'dashboard' || activePage === 'audio-reports');
   const hasValidDateRange =
     isValidDateInput(startDate) &&
     isValidDateInput(endDate) &&
@@ -697,49 +690,6 @@ function App() {
     authUser,
   ]);
 
-  useEffect(() => {
-    if (!authUser || !shouldShowQueryDebugPanel) {
-      return;
-    }
-
-    const abortController = new AbortController();
-    setDebugQueriesState((prev) => ({ ...prev, loading: true, error: null }));
-
-    fetchAudioPartnerDebugQueries({
-      partner: selectedPartner,
-      startDate: hasValidDateRange ? startDate : undefined,
-      endDate: hasValidDateRange ? endDate : undefined,
-      signal: abortController.signal,
-    })
-      .then((payload) => {
-        if (abortController.signal.aborted) {
-          return;
-        }
-        setDebugQueriesState({ loading: false, error: null, payload });
-      })
-      .catch((error) => {
-        if (abortController.signal.aborted || error?.name === 'AbortError') {
-          return;
-        }
-        setDebugQueriesState({
-          loading: false,
-          error: error?.message || 'Unable to load debug queries.',
-          payload: null,
-        });
-      });
-
-    return () => {
-      abortController.abort();
-    };
-  }, [
-    authUser,
-    shouldShowQueryDebugPanel,
-    selectedPartner,
-    startDate,
-    endDate,
-    hasValidDateRange,
-    debugRefreshNonce,
-  ]);
 
   const currentAudioDetailsKey = useMemo(() => {
     if (activePage !== 'audio-reports' || !isAudioSelectionSupported) {
@@ -1103,14 +1053,6 @@ function App() {
     }
   };
 
-  const handleCopyQueryText = async (queryText) => {
-    try {
-      await navigator.clipboard.writeText(String(queryText || ''));
-      addToast({ title: 'Query Debug', message: 'Query copied to clipboard.', type: 'success' });
-    } catch (_error) {
-      addToast({ title: 'Query Debug', message: 'Unable to copy query.', type: 'error' });
-    }
-  };
 
   const reportNotificationCount = useMemo(
     () =>
@@ -1377,15 +1319,6 @@ function App() {
               </div>
             </div>
 
-            {shouldShowQueryDebugPanel ? (
-              <QueryDebugPanel
-                loading={debugQueriesState.loading}
-                error={debugQueriesState.error}
-                payload={debugQueriesState.payload}
-                onRefresh={() => setDebugRefreshNonce((value) => value + 1)}
-                onCopy={handleCopyQueryText}
-              />
-            ) : null}
           </div>
         ) : activePage === 'audio-reports' || activePage === 'video-reports' ? (
           <div className="dashboard-content">
@@ -1436,15 +1369,6 @@ function App() {
               reportFileNamePrefix={reportPartnerLabel}
             />
 
-            {shouldShowQueryDebugPanel ? (
-              <QueryDebugPanel
-                loading={debugQueriesState.loading}
-                error={debugQueriesState.error}
-                payload={debugQueriesState.payload}
-                onRefresh={() => setDebugRefreshNonce((value) => value + 1)}
-                onCopy={handleCopyQueryText}
-              />
-            ) : null}
           </div>
         ) : activePage === 'reports' ? (
           <ReportsPage
