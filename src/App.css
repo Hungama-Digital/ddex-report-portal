@@ -1275,6 +1275,11 @@ tr:hover td {
   border-color: #0f766e;
 }
 
+.reports-actions .identify-btn,
+.reports-actions .identify-btn * {
+  color: #ffffff !important;
+}
+
 .identify-btn.ready {
   opacity: 1;
 }
@@ -1412,9 +1417,9 @@ tr:hover td {
   position: absolute;
   right: 1.25rem;
   top: 5.9rem;
-  width: min(340px, calc(100vw - 2rem));
-  height: calc(100vh - 6.8rem);
-  max-height: calc(100vh - 6.8rem);
+  width: min(300px, calc(100vw - 1.5rem));
+  height: calc(100vh - 6.1rem);
+  max-height: calc(100vh - 6.1rem);
   border: 1px solid #b9cbed;
   border-radius: 16px;
   background: #ffffff;
@@ -1443,9 +1448,22 @@ tr:hover td {
 }
 
 .notification-popover-list {
-  max-height: calc(100vh - 10.8rem);
+  max-height: calc(100vh - 10.1rem);
   overflow: auto;
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.reports-jobs {
+  margin-top: 0.85rem;
+}
+
+.reports-jobs h3 {
+  margin: 0 0 0.75rem;
+}
+
+.reports-page .reports-table th {
+  background: linear-gradient(90deg, #0b1324 0%, #1e3a8a 54%, #0f766e 100%);
+  border-bottom: 1px solid rgba(59, 130, 246, 0.45);
 }
 
 .notification-item {

@@ -61,6 +61,10 @@ const EMPTY_AUDIO_DETAILS_ROWS = {
   rows: [],
 };
 
+const NOTIFICATION_POLL_INTERVAL_MS = 60000;
+const NOTIFICATION_TOAST_QUIET_PERIOD_MS = 45000;
+const AUDIO_DETAILS_FETCH_LIMIT = 10000;
+
 function useLocalStorage(key, initialValue) {
   const [storedValue, setStoredValue] = useState(() => {
     try {
@@ -110,6 +114,7 @@ function App() {
   const [notificationsState, setNotificationsState] = useState({ unreadCount: 0, rows: [] });
   const seenNotificationRef = useRef(new Set());
   const notificationsBootstrappedRef = useRef(false);
+  const notificationToastReadyAtRef = useRef(0);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const notificationButtonRef = useRef(null);
   const notificationTrayRef = useRef(null);
@@ -143,6 +148,7 @@ function App() {
         const me = await fetchMe();
         setAuthUser(me.user);
         setNotificationsState((prev) => ({ ...prev, unreadCount: Number(me.unreadNotifications) || 0 }));
+        notificationToastReadyAtRef.current = Date.now() + NOTIFICATION_TOAST_QUIET_PERIOD_MS;
       } catch (_error) {
         window.localStorage.removeItem('ddex_auth_token');
         setAuthUser(null);
@@ -159,6 +165,7 @@ function App() {
     setAuthLoading(false);
     notificationsBootstrappedRef.current = false;
     seenNotificationRef.current = new Set();
+    notificationToastReadyAtRef.current = Date.now() + NOTIFICATION_TOAST_QUIET_PERIOD_MS;
   };
 
   const handleLogout = async () => {
@@ -174,6 +181,7 @@ function App() {
     setAdminUsersState({ loading: false, rows: [] });
     notificationsBootstrappedRef.current = false;
     seenNotificationRef.current = new Set();
+    notificationToastReadyAtRef.current = 0;
   };
 
   useEffect(() => {
@@ -204,6 +212,10 @@ function App() {
           }
           seenNotificationRef.current.add(item.id);
 
+          if (Date.now() < notificationToastReadyAtRef.current) {
+            continue;
+          }
+
           if (item.type === 'report_ready') {
             addToast({ title: 'Report Ready', message: item.message, type: 'success' });
           } else if (item.type === 'report_started') {
@@ -222,7 +234,7 @@ function App() {
     };
 
     poll();
-    const interval = setInterval(poll, 30000);
+    const interval = setInterval(poll, NOTIFICATION_POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
       clearInterval(interval);
@@ -584,15 +596,8 @@ function App() {
   }, [activePage, isAudioSelectionSupported, selectedPartner, activeTab, startDate, endDate]);
 
   const detailsLimit = useMemo(() => {
-    const byTab = {
-      totalLive: Number(audioSummary.partnerDb) || 0,
-      deliveredThisMonth: Number(audioSummary.deliveredInPeriod) || 0,
-      takenDownThisMonth: Number(audioSummary.takenDownInPeriod) || 0,
-    };
-    const raw = byTab[activeTab] || 0;
-    const withBuffer = raw > 0 ? raw + 500 : 10000;
-    return Math.max(10000, Math.min(withBuffer, 300000));
-  }, [activeTab, audioSummary.partnerDb, audioSummary.deliveredInPeriod, audioSummary.takenDownInPeriod]);
+    return AUDIO_DETAILS_FETCH_LIMIT;
+  }, []);
 
   useEffect(() => {
     if (!authUser || !currentAudioDetailsKey) {
