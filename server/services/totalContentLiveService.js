@@ -385,29 +385,29 @@ async function queryPartnerDbTotalTracks({ contents, push }) {
   const contentsTable = escapeMysqlIdentifier(contents);
   const pushTable = escapeMysqlIdentifier(push);
   const sql = `
-    SELECT COALESCE(
-      SUM(
-        CASE
-          WHEN c.TRACK_IDS IS NOT NULL
-            AND c.TRACK_IDS != ''
-            AND JSON_VALID(c.TRACK_IDS) = 1
-          THEN JSON_LENGTH(c.TRACK_IDS)
-          ELSE 0
-        END
-      ),
-      0
-    ) AS total_track_count
-    FROM ${contentsTable} c
-    INNER JOIN ${pushTable} p
-        ON p.BATCH_ID = c.BATCH_ID
-       AND p.STATUS = 1
-    LEFT JOIN ${contentsTable} c2
-        ON c2.ALBUM_ID = c.ALBUM_ID
-       AND c2.DDEX_TYPE IN ('AUDIO_ALBUM_INSERT', 'AUDIO_ALBUM_UPDATE', 'AUDIO_ALBUM_TAKEDOWN')
-       AND c2.ADDED_ON > c.ADDED_ON
-    WHERE c.DDEX_TYPE IN ('AUDIO_ALBUM_INSERT', 'AUDIO_ALBUM_UPDATE')
-      AND c.STATUS = 1
-      AND c2.ALBUM_ID IS NULL;
+    SELECT COALESCE(SUM(live.track_count), 0) AS total_track_count
+    FROM (
+      SELECT
+        c.ALBUM_ID,
+        MAX(CASE WHEN JSON_VALID(c.TRACK_IDS) = 1 THEN JSON_LENGTH(c.TRACK_IDS) ELSE 0 END)
+          AS track_count
+      FROM (
+        SELECT ALBUM_ID, MAX(ADDED_ON) AS max_added_on
+        FROM ${contentsTable}
+        WHERE STATUS = 1
+          AND DDEX_TYPE IN ('AUDIO_ALBUM_INSERT', 'AUDIO_ALBUM_UPDATE', 'AUDIO_ALBUM_TAKEDOWN')
+        GROUP BY ALBUM_ID
+      ) latest
+      INNER JOIN ${contentsTable} c
+          ON c.ALBUM_ID = latest.ALBUM_ID
+         AND c.ADDED_ON = latest.max_added_on
+         AND c.STATUS = 1
+         AND c.DDEX_TYPE IN ('AUDIO_ALBUM_INSERT', 'AUDIO_ALBUM_UPDATE')
+      INNER JOIN ${pushTable} p
+          ON p.BATCH_ID = c.BATCH_ID
+         AND p.STATUS = 1
+      GROUP BY c.ALBUM_ID
+    ) live;
   `;
 
   const b2bPool = getB2BPool();
@@ -929,20 +929,24 @@ async function queryPartnerDbLiveRows({ partnerKey, tables, limit }) {
       DATE_FORMAT(c.ADDED_ON, '%Y-%m-%d %H:%i:%s') AS addedOn,
       DATE_FORMAT(c.UPDATED_ON, '%Y-%m-%d %H:%i:%s') AS updatedOn,
       c.TRACK_IDS AS trackIdsJson
-    FROM ${contentsTable} c
+    FROM (
+      SELECT ALBUM_ID, MAX(ADDED_ON) AS max_added_on
+      FROM ${contentsTable}
+      WHERE STATUS = 1
+        AND DDEX_TYPE IN ('AUDIO_ALBUM_INSERT', 'AUDIO_ALBUM_UPDATE', 'AUDIO_ALBUM_TAKEDOWN')
+      GROUP BY ALBUM_ID
+    ) latest
+    INNER JOIN ${contentsTable} c
+        ON c.ALBUM_ID = latest.ALBUM_ID
+       AND c.ADDED_ON = latest.max_added_on
+       AND c.STATUS = 1
+       AND c.DDEX_TYPE IN ('AUDIO_ALBUM_INSERT', 'AUDIO_ALBUM_UPDATE')
+       AND c.TRACK_IDS IS NOT NULL
+       AND c.TRACK_IDS != ''
+       AND JSON_VALID(c.TRACK_IDS) = 1
     INNER JOIN ${pushTable} p
         ON p.BATCH_ID = c.BATCH_ID
        AND p.STATUS = 1
-    LEFT JOIN ${contentsTable} c2
-        ON c2.ALBUM_ID = c.ALBUM_ID
-       AND c2.DDEX_TYPE IN ('AUDIO_ALBUM_INSERT', 'AUDIO_ALBUM_UPDATE', 'AUDIO_ALBUM_TAKEDOWN')
-       AND c2.ADDED_ON > c.ADDED_ON
-    WHERE c.DDEX_TYPE IN ('AUDIO_ALBUM_INSERT', 'AUDIO_ALBUM_UPDATE')
-      AND c.STATUS = 1
-      AND c.TRACK_IDS IS NOT NULL
-      AND c.TRACK_IDS != ''
-      AND JSON_VALID(c.TRACK_IDS) = 1
-      AND c2.ALBUM_ID IS NULL
     ORDER BY c.ADDED_ON DESC, c.UPDATED_ON DESC, c.BATCH_ID DESC
     LIMIT ?;
   `;
