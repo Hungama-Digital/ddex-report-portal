@@ -9,6 +9,7 @@ const ContentTable = ({
   tableLoading = false,
   tableError = null,
   reportPartnerLabel = '',
+  reportFileNamePrefix = 'DDEX',
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -114,6 +115,36 @@ const ContentTable = ({
   const exportDataUri = useMemo(() => {
     if (searchedData.length === 0) return '#';
     if (isDbDetailsMode) {
+      const expandedTrackRows = [];
+      searchedData.forEach((row) => {
+        const trackIds = String(row.trackIdsCsv || '')
+          .split(',')
+          .map((item) => item.trim())
+          .filter((item) => /^\d+$/.test(item));
+        if (trackIds.length === 0) {
+          expandedTrackRows.push({
+            trackId: '',
+            albumId: row.albumId || '',
+            albumName: row.albumName || '',
+            upc: row.upc || '',
+            addedOn: row.addedOn || '',
+            batchId: row.batchId || '',
+          });
+          return;
+        }
+
+        trackIds.forEach((trackId) => {
+          expandedTrackRows.push({
+            trackId,
+            albumId: row.albumId || '',
+            albumName: row.albumName || '',
+            upc: row.upc || '',
+            addedOn: row.addedOn || '',
+            batchId: row.batchId || '',
+          });
+        });
+      });
+
       let htmlStr = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
         <head>
           <meta charset="utf-8" />
@@ -126,26 +157,26 @@ const ContentTable = ({
           <table>
             <thead>
               <tr>
+                <th>Track ID</th>
                 <th>Album ID</th>
                 <th>Album Name</th>
                 <th>UPC</th>
                 <th>Added On</th>
                 <th>Batch ID</th>
-                <th>Track IDs</th>
               </tr>
             </thead>
             <tbody>`;
 
-      searchedData.forEach((row) => {
+      expandedTrackRows.forEach((row) => {
         const escapeHtml = (str) => String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         htmlStr += `
               <tr>
+                <td>${escapeHtml(row.trackId)}</td>
                 <td>${escapeHtml(row.albumId)}</td>
                 <td>${escapeHtml(row.albumName)}</td>
                 <td>${escapeHtml(row.upc)}</td>
                 <td>${escapeHtml(row.addedOn)}</td>
                 <td>${escapeHtml(row.batchId)}</td>
-                <td>${escapeHtml(row.trackIdsCsv)}</td>
               </tr>`;
       });
 
@@ -207,6 +238,12 @@ const ContentTable = ({
     return 'data:application/vnd.ms-excel;charset=utf-8,' + encodeURIComponent(htmlStr);
   }, [searchedData, activePage, isDbDetailsMode]);
 
+  const exportFileName = useMemo(() => {
+    const prefix = String(reportFileNamePrefix || 'DDEX').replace(/\s+/g, '_');
+    const date = new Date().toISOString().split('T')[0];
+    return `${prefix}_DDEX_Export_${date}.xls`;
+  }, [reportFileNamePrefix]);
+
   return (
     <div className="content-table-container">
       <div className="table-header-row">
@@ -230,7 +267,7 @@ const ContentTable = ({
           <a 
             className="export-btn" 
             href={exportDataUri}
-            download={`DDEX_Export_${new Date().toISOString().split('T')[0]}.xls`}
+            download={exportFileName}
             style={{ textDecoration: 'none' }}
           >
             <Download size={16} /> Export Excel
