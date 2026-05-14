@@ -75,9 +75,10 @@ export async function logout() {
   });
 }
 
-export async function fetchNotifications({ includeRead = false, limit = 20 } = {}) {
+export async function fetchNotifications({ includeRead = false, limit = 20, days = 7 } = {}) {
   const params = new URLSearchParams();
   params.set('limit', String(limit));
+  params.set('days', String(days));
   if (includeRead) {
     params.set('includeRead', '1');
   }

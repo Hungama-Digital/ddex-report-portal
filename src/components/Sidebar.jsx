@@ -12,7 +12,7 @@ import {
   Bell,
 } from 'lucide-react';
 
-const Sidebar = ({ activePage, setActivePage, authUser, adminNotificationCount = 0, onLogout }) => {
+const Sidebar = ({ activePage, setActivePage, authUser, reportsNotificationCount = 0, onLogout }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   return (
@@ -71,6 +71,11 @@ const Sidebar = ({ activePage, setActivePage, authUser, adminNotificationCount =
         >
           <Files size={20} />
           <span className="nav-text">Reports</span>
+          {reportsNotificationCount > 0 ? (
+            <span className="admin-badge" title="New report/admin notifications">
+              <Bell size={12} /> {reportsNotificationCount}
+            </span>
+          ) : null}
         </button>
 
         {authUser?.role === 'admin' ? (
@@ -80,11 +85,6 @@ const Sidebar = ({ activePage, setActivePage, authUser, adminNotificationCount =
           >
             <Shield size={20} />
             <span className="nav-text">Admin</span>
-            {adminNotificationCount > 0 ? (
-              <span className="admin-badge" title="Pending requests/notifications">
-                <Bell size={12} /> {adminNotificationCount}
-              </span>
-            ) : null}
           </button>
         ) : null}
 

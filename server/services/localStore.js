@@ -239,6 +239,18 @@ export async function createAccessRequest({ username, email }) {
     );
   }
 
+  await db.run(
+    `INSERT INTO notifications (recipient_user_id, type, message, payload_json, created_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [
+      null,
+      'approval_request',
+      `New user approval request: ${normalizedUsername} (${normalizedEmail})`,
+      JSON.stringify({ userId: insertedId, username: normalizedUsername, email: normalizedEmail }),
+      now,
+    ],
+  );
+
   return { id: insertedId, alreadyPending: false };
 }
 
@@ -384,6 +396,18 @@ export async function approveUser(userId, adminUserId) {
     ],
   );
 
+  await db.run(
+    `INSERT INTO notifications (recipient_user_id, type, message, payload_json, created_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [
+      null,
+      'approval_granted',
+      `User approved: ${user.username} (${user.email})`,
+      JSON.stringify({ userId: user.id, approvedBy: adminUserId }),
+      nowIso(),
+    ],
+  );
+
   return { ok: true, user };
 }
 
@@ -422,6 +446,18 @@ export async function rejectUser(userId, adminUserId) {
     ],
   );
 
+  await db.run(
+    `INSERT INTO notifications (recipient_user_id, type, message, payload_json, created_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [
+      null,
+      'approval_rejected',
+      `User rejected: ${user.username} (${user.email})`,
+      JSON.stringify({ userId: user.id, rejectedBy: adminUserId }),
+      nowIso(),
+    ],
+  );
+
   return { ok: true, user };
 }
 
@@ -434,18 +470,24 @@ export async function createNotification({ recipientUserId = null, type, message
   );
 }
 
-export async function listNotificationsForUser(userId, { includeRead = false, limit = 20 } = {}) {
+export async function listNotificationsForUser(
+  userId,
+  { includeRead = false, limit = 20, days = 7 } = {},
+) {
   const db = await getStoreDb();
   const normalizedLimit = Math.min(Math.max(Number(limit) || 20, 1), 100);
+  const normalizedDays = Math.min(Math.max(Number(days) || 7, 1), 30);
+  const sinceIso = new Date(Date.now() - normalizedDays * 24 * 60 * 60 * 1000).toISOString();
   const whereRead = includeRead ? '' : 'AND n.read_at IS NULL';
   return db.all(
     `SELECT n.id, n.type, n.message, n.payload_json, n.created_at, n.read_at
      FROM notifications n
      WHERE (n.recipient_user_id = ? OR n.recipient_user_id IS NULL)
+       AND n.created_at >= ?
        ${whereRead}
      ORDER BY n.created_at DESC
      LIMIT ?`,
-    [userId, normalizedLimit],
+    [userId, sinceIso, normalizedLimit],
   );
 }
 
@@ -459,14 +501,17 @@ export async function markNotificationRead(notificationId, userId) {
   );
 }
 
-export async function getUnreadNotificationCount(userId) {
+export async function getUnreadNotificationCount(userId, { days = 7 } = {}) {
   const db = await getStoreDb();
+  const normalizedDays = Math.min(Math.max(Number(days) || 7, 1), 30);
+  const sinceIso = new Date(Date.now() - normalizedDays * 24 * 60 * 60 * 1000).toISOString();
   const row = await db.get(
     `SELECT COUNT(*) AS count
      FROM notifications
      WHERE (recipient_user_id = ? OR recipient_user_id IS NULL)
+       AND created_at >= ?
        AND read_at IS NULL`,
-    [userId],
+    [userId, sinceIso],
   );
   return Number(row?.count || 0);
 }

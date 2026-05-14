@@ -13,6 +13,7 @@ const SummaryCards = ({
   metricsError = null,
   startDate,
   endDate,
+  liveActions = null,
 }) => {
   const numberFormatter = new Intl.NumberFormat('en-IN');
 
@@ -71,7 +72,7 @@ const SummaryCards = ({
       return metricsError;
     }
     if (liveBreakdown?.isLiveData) {
-      return 'Source-wise live count';
+      return liveActions ? '' : 'Source-wise live count';
     }
     if (isDashboard) {
       return getBreakdown('totalLive');
@@ -239,6 +240,7 @@ const SummaryCards = ({
       subtitle: getLiveSubtitle(),
       kind: 'live',
       footerChart: renderLiveMiniChart(),
+      liveActions,
     },
     {
       id: 'deliveredThisMonth',
@@ -289,6 +291,9 @@ const SummaryCards = ({
           </div>
           <div className="card-value">{card.value}</div>
           {card.footerChart}
+          {card.id === 'totalLive' && card.liveActions ? (
+            <div className="card-live-actions">{card.liveActions}</div>
+          ) : null}
           <div className="card-subtitle">{card.subtitle}</div>
         </div>
       ))}

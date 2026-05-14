@@ -155,7 +155,7 @@ app.post('/api/auth/login', async (req, res, next) => {
 app.use(authOptional);
 
 app.get('/api/auth/me', requireAuth, async (req, res) => {
-  const unreadCount = await getUnreadNotificationCount(req.authUser.id);
+  const unreadCount = await getUnreadNotificationCount(req.authUser.id, { days: 7 });
   res.json({
     ok: true,
     user: {
@@ -181,11 +181,13 @@ app.get('/api/notifications', requireAuth, async (req, res, next) => {
   try {
     const includeRead = req.query.includeRead === '1';
     const limit = req.query.limit;
+    const days = req.query.days;
     const notifications = await listNotificationsForUser(req.authUser.id, {
       includeRead,
       limit,
+      days,
     });
-    const unreadCount = await getUnreadNotificationCount(req.authUser.id);
+    const unreadCount = await getUnreadNotificationCount(req.authUser.id, { days });
 
     res.json({
       ok: true,

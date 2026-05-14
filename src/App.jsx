@@ -11,7 +11,7 @@ import ReportsPage from './components/ReportsPage';
 import AdminPage from './components/AdminPage';
 import ConfirmDialog from './components/ConfirmDialog';
 import NotificationToasts from './components/NotificationToasts';
-import { Sun, Moon, Search, Download } from 'lucide-react';
+import { Sun, Moon, Search, Download, Bell } from 'lucide-react';
 import {
   approvePendingUser,
   fetchAudioDetailsRows,
@@ -104,6 +104,7 @@ function App() {
 
   const [notificationsState, setNotificationsState] = useState({ unreadCount: 0, rows: [] });
   const seenNotificationRef = useRef(new Set());
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [toasts, setToasts] = useState([]);
 
   const [exportActionLoading, setExportActionLoading] = useState(false);
@@ -171,7 +172,7 @@ function App() {
     let cancelled = false;
     const poll = async () => {
       try {
-        const response = await fetchNotifications({ includeRead: false, limit: 30 });
+        const response = await fetchNotifications({ includeRead: true, limit: 120, days: 7 });
         if (cancelled) {
           return;
         }
@@ -187,13 +188,15 @@ function App() {
 
           if (item.type === 'report_ready') {
             addToast({ title: 'Report Ready', message: item.message, type: 'success' });
+          } else if (item.type === 'report_started') {
+            addToast({ title: 'Report Started', message: item.message, type: 'info' });
           } else if (item.type === 'report_failed') {
             addToast({ title: 'Report Failed', message: item.message, type: 'error' });
           } else if (item.type === 'approval_request' && authUser.role === 'admin') {
             addToast({ title: 'Approval Request', message: item.message, type: 'info' });
+          } else if (item.type === 'approval_granted' || item.type === 'approval_rejected') {
+            addToast({ title: 'User Approval Update', message: item.message, type: 'info' });
           }
-
-          markNotificationAsRead(item.id).catch(() => {});
         }
       } catch (_error) {
         // skip transient poll errors
@@ -856,6 +859,39 @@ function App() {
     }
   };
 
+  const reportNotificationCount = useMemo(
+    () =>
+      (notificationsState.rows || []).filter(
+        (item) => !item.readAt && (item.type === 'report_ready' || item.type === 'report_failed'),
+      ).length,
+    [notificationsState.rows],
+  );
+
+  const notificationRows = useMemo(() => notificationsState.rows || [], [notificationsState.rows]);
+
+  const markAllNotificationsRead = async () => {
+    const unread = notificationRows.filter((item) => !item.readAt);
+    if (!unread.length) {
+      return;
+    }
+
+    await Promise.allSettled(unread.map((item) => markNotificationAsRead(item.id)));
+    setNotificationsState((previous) => ({
+      unreadCount: 0,
+      rows: previous.rows.map((item) =>
+        item.readAt ? item : { ...item, readAt: new Date().toISOString() },
+      ),
+    }));
+  };
+
+  const toggleNotifications = async () => {
+    const next = !isNotificationOpen;
+    setIsNotificationOpen(next);
+    if (next) {
+      await markAllNotificationsRead();
+    }
+  };
+
   if (authLoading) {
     return <div className="app-loading-screen">Loading portal...</div>;
   }
@@ -872,7 +908,7 @@ function App() {
         activePage={activePage}
         setActivePage={setActivePage}
         authUser={authUser}
-        adminNotificationCount={authUser.role === 'admin' ? Math.max(notificationsState.unreadCount, approvalsState.rows.length) : 0}
+        reportsNotificationCount={reportNotificationCount}
         onLogout={handleLogout}
       />
 
@@ -904,10 +940,45 @@ function App() {
                       : 'PREFERENCES & CONFIGURATION'}
             </span>
           </div>
-          <button className="theme-toggle-btn" onClick={() => setIsDarkMode(!isDarkMode)} title="Toggle Theme">
-            {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
-          </button>
+          <div className="header-actions">
+            <button
+              className="header-notify-btn"
+              onClick={toggleNotifications}
+              title="Notifications"
+            >
+              <Bell size={18} />
+              {notificationsState.unreadCount > 0 ? (
+                <span className="header-notify-badge">{notificationsState.unreadCount}</span>
+              ) : null}
+            </button>
+            <button className="theme-toggle-btn" onClick={() => setIsDarkMode(!isDarkMode)} title="Toggle Theme">
+              {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
+          </div>
         </header>
+
+        {isNotificationOpen ? (
+          <div className="notification-popover">
+            <div className="notification-popover-header">
+              <h4>Notifications</h4>
+              <span>Last 7 days</span>
+            </div>
+            <div className="notification-popover-list">
+              {notificationRows.length === 0 ? (
+                <div className="notification-empty">No notifications available.</div>
+              ) : (
+                notificationRows.map((item) => (
+                  <div key={item.id} className={`notification-item ${item.readAt ? 'read' : 'unread'}`}>
+                    <p className="notification-message">{item.message}</p>
+                    <span className="notification-time">
+                      {String(item.createdAt || '').replace('T', ' ').slice(0, 19)}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        ) : null}
 
         {activePage === 'dashboard' ? (
           <div className="dashboard-content">
@@ -1028,17 +1099,6 @@ function App() {
               activePage={activePage}
             />
 
-            {activePage === 'audio-reports' ? (
-              <div className="report-source-actions">
-                <button onClick={() => handleOpenExportConfirm('metasea')}>
-                  <Download size={16} /> Download Metasea
-                </button>
-                <button onClick={() => handleOpenExportConfirm('partnerdb')}>
-                  <Download size={16} /> Download Retailer DB
-                </button>
-              </div>
-            ) : null}
-
             <SummaryCards
               activeTab={activeTab}
               setActiveTab={setActiveTab}
@@ -1048,6 +1108,20 @@ function App() {
               metricsError={activePage === 'audio-reports' ? shouldShowAudioMetricsError : null}
               startDate={startDate}
               endDate={endDate}
+              liveActions={
+                activePage === 'audio-reports'
+                  ? (
+                      <div className="report-source-actions report-source-actions--inside">
+                        <button onClick={() => handleOpenExportConfirm('metasea')}>
+                          <Download size={15} /> Download Metasea
+                        </button>
+                        <button onClick={() => handleOpenExportConfirm('partnerdb')}>
+                          <Download size={15} /> Download Retailer DB
+                        </button>
+                      </div>
+                    )
+                  : null
+              }
             />
 
             <ContentTable
