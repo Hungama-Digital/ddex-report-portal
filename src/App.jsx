@@ -18,6 +18,7 @@ import {
   deleteReportById,
   fetchAudioDetailsRows,
   fetchAudioPartnerDebugQueries,
+  fetchAudioPartnerPeriodMetrics,
   fetchAudioPartnerSummary,
   fetchAudioPartnerTotalContentLive,
   fetchAudioRecentDeliveries,
@@ -485,6 +486,8 @@ function App() {
     };
   }, [currentAudioLiveKey, selectedPartner, isAllAudioPartnersSelected, authUser]);
 
+  // Phase 2: Delivered + TakeDown — fires only after Phase 1 (Total Live) is shown.
+  // All partner queries run in parallel via the dedicated /period-metrics endpoint.
   useEffect(() => {
     if (!authUser || !currentAudioPeriodKey || !isAudioSummaryReady) {
       return;
@@ -501,41 +504,31 @@ function App() {
 
     const periodPromise = isAllAudioPartnersSelected
       ? (async () => {
-          // Intelligent load control:
-          // run all-partner period queries sequentially to avoid DB/query burst.
-          let deliveredInPeriod = 0;
-          let takenDownInPeriod = 0;
-          let successCount = 0;
-
-          for (const partner of audioPartners) {
-            if (abortController.signal.aborted) {
-              const abortError = new Error('Aborted');
-              abortError.name = 'AbortError';
-              throw abortError;
-            }
-
-            try {
-              const summary = await fetchAudioPartnerSummary({
+          const results = await Promise.all(
+            audioPartners.map((partner) =>
+              fetchAudioPartnerPeriodMetrics({
                 partner: partner.id,
                 startDate,
                 endDate,
                 signal: abortController.signal,
-              });
-              deliveredInPeriod += Number(summary?.deliveredInPeriod) || 0;
-              takenDownInPeriod += Number(summary?.takenDownInPeriod) || 0;
-              successCount += 1;
-            } catch (_error) {
-              // keep continuing so one partner failure doesn't block whole dashboard
-            }
-          }
+              }).catch(() => null),
+            ),
+          );
 
+          const successCount = results.filter(Boolean).length;
           if (!successCount) {
-            throw new Error('Unable to fetch period metrics for partners.');
+            throw new Error('Unable to fetch period metrics for any partner.');
           }
 
-          return { deliveredInPeriod, takenDownInPeriod };
+          return results.reduce(
+            (acc, r) => ({
+              deliveredInPeriod: acc.deliveredInPeriod + (Number(r?.deliveredInPeriod) || 0),
+              takenDownInPeriod: acc.takenDownInPeriod + (Number(r?.takenDownInPeriod) || 0),
+            }),
+            { deliveredInPeriod: 0, takenDownInPeriod: 0 },
+          );
         })()
-      : fetchAudioPartnerSummary({
+      : fetchAudioPartnerPeriodMetrics({
           partner: selectedPartner,
           startDate,
           endDate,

@@ -75,9 +75,23 @@ async function getRedisClient() {
   }
 
   const url = buildRedisUrl();
-  redisClient = createClient({ url });
+  redisClient = createClient({
+    url,
+    socket: {
+      reconnectStrategy: (retries) => {
+        if (retries >= 3) {
+          return false; // stop retrying after 3 attempts
+        }
+        return Math.min(retries * 500, 2000);
+      },
+    },
+  });
+  let redisErrorLogged = false;
   redisClient.on("error", (error) => {
-    logError("Redis cache client error", { error: error?.message });
+    if (!redisErrorLogged) {
+      logError("Redis cache client error", { error: error?.message });
+      redisErrorLogged = true;
+    }
   });
 
   redisReadyPromise = redisClient
