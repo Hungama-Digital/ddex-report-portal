@@ -12,6 +12,7 @@ import AdminPage from './components/AdminPage';
 import ConfirmDialog from './components/ConfirmDialog';
 import NotificationToasts from './components/NotificationToasts';
 import { Sun, Moon, Search, Download, Bell } from 'lucide-react';
+import { formatDateTimeIst } from './utils/time';
 import {
   approvePendingUser,
   deleteReportById,
@@ -108,6 +109,7 @@ function App() {
 
   const [notificationsState, setNotificationsState] = useState({ unreadCount: 0, rows: [] });
   const seenNotificationRef = useRef(new Set());
+  const notificationsBootstrappedRef = useRef(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const notificationButtonRef = useRef(null);
   const notificationTrayRef = useRef(null);
@@ -155,7 +157,8 @@ function App() {
   const handleAuthenticated = (user) => {
     setAuthUser(user);
     setAuthLoading(false);
-    addToast({ title: 'Welcome', message: `Logged in as ${user.username}`, type: 'success' });
+    notificationsBootstrappedRef.current = false;
+    seenNotificationRef.current = new Set();
   };
 
   const handleLogout = async () => {
@@ -169,6 +172,8 @@ function App() {
     setNotificationsState({ unreadCount: 0, rows: [] });
     setApprovalsState({ loading: false, rows: [] });
     setAdminUsersState({ loading: false, rows: [] });
+    notificationsBootstrappedRef.current = false;
+    seenNotificationRef.current = new Set();
   };
 
   useEffect(() => {
@@ -186,6 +191,12 @@ function App() {
 
         const rows = Array.isArray(response.notifications) ? response.notifications : [];
         setNotificationsState({ unreadCount: Number(response.unreadCount) || 0, rows });
+
+        if (!notificationsBootstrappedRef.current) {
+          seenNotificationRef.current = new Set(rows.map((item) => item.id));
+          notificationsBootstrappedRef.current = true;
+          return;
+        }
 
         for (const item of rows) {
           if (seenNotificationRef.current.has(item.id)) {
@@ -1053,7 +1064,7 @@ function App() {
                     </span>
                     <p className="notification-message">{item.message}</p>
                     <span className="notification-time">
-                      {String(item.createdAt || '').replace('T', ' ').slice(0, 19)}
+                      {formatDateTimeIst(item.createdAt)}
                     </span>
                   </div>
                 ))
@@ -1154,7 +1165,7 @@ function App() {
                           <td style={{ fontWeight: 500 }}>{item.albumId || '-'}</td>
                           <td>{item.albumName || '-'}</td>
                           <td>{item.upc || '-'}</td>
-                          <td>{item.addedOn || '-'}</td>
+                          <td>{item.addedOn ? formatDateTimeIst(item.addedOn) : '-'}</td>
                           <td>{item.batchId || '-'}</td>
                           <td>
                             <div className="track-ids-cell" title={item.trackIdsCsv || '-'}>

@@ -340,15 +340,48 @@ async function queryPartnerDbTotalTracks({ contents, push }) {
     contentsTable: contents,
     pushTable: push,
   });
-  const rows = await queryPartnerDbLiveRows({
-    partnerKey: "summary",
-    tables: { contents, push },
-    limit: 1000000,
-  });
-  const count = (rows || []).reduce(
-    (sum, row) => sum + (Number(row.trackCount) || 0),
-    0,
-  );
+
+  const contentsTable = escapeMysqlIdentifier(contents);
+  const pushTable = escapeMysqlIdentifier(push);
+  const sql = `
+    SELECT COALESCE(
+      SUM(
+        CASE
+          WHEN c.TRACK_IDS IS NOT NULL
+            AND c.TRACK_IDS != ''
+            AND JSON_VALID(c.TRACK_IDS) = 1
+          THEN JSON_LENGTH(c.TRACK_IDS)
+          ELSE 0
+        END
+      ),
+      0
+    ) AS total_track_count
+    FROM ${contentsTable} c
+    WHERE c.DDEX_TYPE IN ('AUDIO_ALBUM_INSERT', 'AUDIO_ALBUM_UPDATE')
+      AND c.STATUS = 1
+      AND EXISTS (
+        SELECT 1
+        FROM ${pushTable} p
+        WHERE p.BATCH_ID = c.BATCH_ID
+          AND p.STATUS = 1
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM ${contentsTable} c2
+        WHERE c2.ALBUM_ID = c.ALBUM_ID
+          AND c2.DDEX_TYPE IN (
+            'AUDIO_ALBUM_INSERT',
+            'AUDIO_ALBUM_UPDATE',
+            'AUDIO_ALBUM_TAKEDOWN'
+          )
+          AND c2.ADDED_ON > c.ADDED_ON
+      );
+  `;
+
+  const b2bPool = getB2BPool();
+  const [rows] = await b2bPool.query(sql);
+  const rawCount = rows?.[0]?.total_track_count ?? 0;
+  const count = Number(rawCount) || 0;
   logDebug("Partner-db total-content-live query completed", {
     contentsTable: contents,
     pushTable: push,

@@ -1413,9 +1413,9 @@ tr:hover td {
   position: absolute;
   right: 1.25rem;
   top: 5.9rem;
-  width: min(380px, calc(100vw - 2rem));
-  height: calc(100vh - 7.2rem);
-  max-height: calc(100vh - 7.2rem);
+  width: min(340px, calc(100vw - 2rem));
+  height: calc(100vh - 6.8rem);
+  max-height: calc(100vh - 6.8rem);
   border: 1px solid #b9cbed;
   border-radius: 16px;
   background: #ffffff;
@@ -1444,7 +1444,7 @@ tr:hover td {
 }
 
 .notification-popover-list {
-  max-height: calc(100vh - 11.8rem);
+  max-height: calc(100vh - 10.8rem);
   overflow: auto;
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
 }

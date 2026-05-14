@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Download, FileDiff, RefreshCw, Trash2 } from 'lucide-react';
+import { formatDateTimeIst } from '../utils/time';
 
 function sourceLabel(value) {
   const key = String(value || '').toLowerCase();
@@ -117,7 +118,7 @@ const ReportsPage = ({
                   <td>{row.file_name}</td>
                   <td>{partnerLabel(row.partner_label || row.partner)}</td>
                   <td>{sourceLabel(row.source)}</td>
-                  <td>{String(row.created_at || '').replace('T', ' ').slice(0, 19)}</td>
+                  <td>{formatDateTimeIst(row.created_at)}</td>
                   <td>{row.track_count || 0}</td>
                   <td>
                     <button className="icon-btn" onClick={() => onDownloadReport(row)} title="Download report">
@@ -168,8 +169,8 @@ const ReportsPage = ({
                     <td>{partnerLabel(job.partner)}</td>
                     <td>{sourceLabel(job.source)}</td>
                     <td><span className={`job-status ${job.status}`}>{job.status}</span></td>
-                    <td>{job.started_at ? String(job.started_at).replace('T', ' ').slice(0, 19) : '-'}</td>
-                    <td>{job.finished_at ? String(job.finished_at).replace('T', ' ').slice(0, 19) : '-'}</td>
+                    <td>{job.started_at ? formatDateTimeIst(job.started_at) : '-'}</td>
+                    <td>{job.finished_at ? formatDateTimeIst(job.finished_at) : '-'}</td>
                   </tr>
                 ))
               )}

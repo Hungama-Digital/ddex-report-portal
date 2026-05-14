@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { FileQuestion, Search, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import DetailModal from './DetailModal';
+import { formatDateTimeIst } from '../utils/time';
 
 const ContentTable = ({
   filteredContents,
@@ -347,7 +348,7 @@ const ContentTable = ({
                       <td style={{ fontWeight: 500 }}>{content.albumId}</td>
                       <td>{content.albumName || '-'}</td>
                       <td>{content.upc || '-'}</td>
-                      <td>{content.addedOn}</td>
+                      <td>{formatDateTimeIst(content.addedOn)}</td>
                       <td>{content.batchId}</td>
                       <td>
                         <div className="track-ids-cell" title={content.trackIdsCsv || '-'}>
