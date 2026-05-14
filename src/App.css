@@ -1512,6 +1512,120 @@ tr:hover td {
   background: #ede9fe;
 }
 
+.query-debug-panel {
+  margin-top: 1.25rem;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: var(--bg-card);
+  padding: 1rem;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.query-debug-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.query-debug-header h3 {
+  margin: 0;
+}
+
+.query-debug-header p {
+  margin: 0.2rem 0 0;
+  color: var(--text-secondary);
+}
+
+.query-debug-header button,
+.debug-query-block-header button {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #0f172a;
+  border-radius: 10px;
+  padding: 0.42rem 0.68rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  cursor: pointer;
+}
+
+.query-debug-loading,
+.query-debug-empty {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.query-debug-error {
+  color: #b91c1c;
+  font-size: 0.9rem;
+}
+
+.debug-partner-card {
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 0.85rem;
+  background: rgba(248, 250, 252, 0.45);
+}
+
+.debug-partner-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.1rem;
+  align-items: baseline;
+  margin-bottom: 0.65rem;
+}
+
+.debug-partner-card-header h4 {
+  margin: 0;
+  text-transform: capitalize;
+}
+
+.debug-partner-card-header span {
+  color: #475569;
+  font-size: 0.82rem;
+}
+
+.debug-query-grid {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.debug-query-block {
+  border: 1px solid #dbe4f0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.debug-query-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid #e2e8f0;
+  background: linear-gradient(90deg, #f8fafc 0%, #eff6ff 100%);
+}
+
+.debug-query-block-header h4 {
+  margin: 0;
+  font-size: 0.83rem;
+}
+
+.debug-query-block pre {
+  margin: 0;
+  padding: 0.8rem;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: #0f172a;
+  background: #f8fafc;
+}
+
 .admin-section {
   display: grid;
   gap: 0.8rem;

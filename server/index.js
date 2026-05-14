@@ -13,6 +13,7 @@ import { logDebug, logError, logInfo } from './logger.js';
 import {
   getAudioDetailsRows,
   getAudioRecentDeliveries,
+  getAudioPartnerDebugQueries,
   getAudioPartnerSummary,
   getAudioPartnerTotalContentLive,
 } from './services/totalContentLiveService.js';
@@ -471,6 +472,21 @@ app.get('/api/audio/partners/:partner/details', requireAuth, async (req, res, ne
     });
 
     res.json(details);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/audio/partners/:partner/debug-queries', requireAuth, async (req, res, next) => {
+  try {
+    const payload = getAudioPartnerDebugQueries({
+      partner: req.params.partner,
+      retailerIdOverride: req.query.retailerId,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+    });
+
+    res.json({ ok: true, ...payload });
   } catch (error) {
     next(error);
   }

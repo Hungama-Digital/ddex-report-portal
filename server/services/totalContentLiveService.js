@@ -47,6 +47,14 @@ function escapeMysqlIdentifier(identifier) {
     .join(".");
 }
 
+function toSqlString(value) {
+  return `'${String(value ?? "").replace(/\\/g, "\\\\").replace(/'/g, "''")}'`;
+}
+
+function fillPostgresParam1(sql, value) {
+  return sql.replace(/\$1\b/g, String(Number.parseInt(String(value), 10) || 0));
+}
+
 function parseRetailerId(overrideValue) {
   if (
     overrideValue === undefined ||
@@ -1656,4 +1664,282 @@ export async function getAudioDetailsRows({
 
   inflightAudioDetailsRows.set(cacheKey, promise);
   return promise;
+}
+
+export function getAudioPartnerDebugQueries({
+  partner,
+  retailerIdOverride,
+  startDate,
+  endDate,
+}) {
+  const normalizedPartner = String(partner || "").trim().toLowerCase();
+  if (!normalizedPartner) {
+    const error = new Error("Partner is required.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const buildForPartner = (partnerKey) => {
+    const config = resolvePartnerConfiguration(partnerKey, retailerIdOverride);
+    const contentsTable = escapeMysqlIdentifier(config.partnerDbTables.contents);
+    const pushTable = escapeMysqlIdentifier(config.partnerDbTables.push);
+    const bounds =
+      startDate && endDate ? parseDateRangeBounds(startDate, endDate) : null;
+
+    const metaseaQuery = fillPostgresParam1(
+      metaseaAmazonQuery,
+      config.retailerId,
+    );
+
+    const partnerDbTotalQuery = `
+SELECT COALESCE(
+  SUM(
+    CASE
+      WHEN c.TRACK_IDS IS NOT NULL
+        AND c.TRACK_IDS != ''
+        AND JSON_VALID(c.TRACK_IDS) = 1
+      THEN JSON_LENGTH(c.TRACK_IDS)
+      ELSE 0
+    END
+  ),
+  0
+) AS total_track_count
+FROM ${contentsTable} c
+WHERE c.DDEX_TYPE IN ('AUDIO_ALBUM_INSERT', 'AUDIO_ALBUM_UPDATE')
+  AND c.STATUS = 1
+  AND EXISTS (
+    SELECT 1
+    FROM ${pushTable} p
+    WHERE p.BATCH_ID = c.BATCH_ID
+      AND p.STATUS = 1
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM ${contentsTable} c2
+    WHERE c2.ALBUM_ID = c.ALBUM_ID
+      AND c2.DDEX_TYPE IN (
+        'AUDIO_ALBUM_INSERT',
+        'AUDIO_ALBUM_UPDATE',
+        'AUDIO_ALBUM_TAKEDOWN'
+      )
+      AND c2.ADDED_ON > c.ADDED_ON
+  );`.trim();
+
+    const deliveredQuery = bounds
+      ? `
+SELECT COUNT(*) AS delivered_track_count
+FROM (
+  SELECT u.TRACK_IDS
+  FROM ${contentsTable} u
+  INNER JOIN ${pushTable} pu
+      ON pu.BATCH_ID = u.BATCH_ID
+     AND pu.STATUS = 1
+  INNER JOIN (
+      SELECT c.ALBUM_ID,
+             MAX(
+               CONCAT(
+                 COALESCE(DATE_FORMAT(c.ADDED_ON, '%Y-%m-%d %H:%i:%s'),'0000-00-00 00:00:00'),
+                 '|',
+                 COALESCE(DATE_FORMAT(c.UPDATED_ON, '%Y-%m-%d %H:%i:%s'),'0000-00-00 00:00:00'),
+                 '|',
+                 COALESCE(LPAD(c.BATCH_ID, 64, '0'), '0')
+               )
+             ) AS latest_key
+      FROM ${contentsTable} c
+      INNER JOIN ${pushTable} p
+          ON p.BATCH_ID = c.BATCH_ID
+         AND p.STATUS = 1
+      WHERE c.DDEX_TYPE = 'AUDIO_ALBUM_UPDATE'
+        AND c.STATUS = 1
+        AND c.ADDED_ON >= ${toSqlString(bounds.startDateTime)}
+        AND c.ADDED_ON <  ${toSqlString(bounds.endExclusiveDateTime)}
+      GROUP BY c.ALBUM_ID
+  ) latest_update
+     ON latest_update.ALBUM_ID = u.ALBUM_ID
+     AND latest_update.latest_key = CONCAT(
+           COALESCE(DATE_FORMAT(u.ADDED_ON, '%Y-%m-%d %H:%i:%s'),'0000-00-00 00:00:00'),
+           '|',
+           COALESCE(DATE_FORMAT(u.UPDATED_ON, '%Y-%m-%d %H:%i:%s'),'0000-00-00 00:00:00'),
+           '|',
+           COALESCE(LPAD(u.BATCH_ID, 64, '0'), '0')
+         )
+  INNER JOIN (
+      SELECT DISTINCT ci.ALBUM_ID
+      FROM ${contentsTable} ci
+      INNER JOIN ${pushTable} pi
+          ON pi.BATCH_ID = ci.BATCH_ID
+         AND pi.STATUS = 1
+      WHERE ci.DDEX_TYPE = 'AUDIO_ALBUM_INSERT'
+        AND ci.STATUS = 1
+        AND ci.ADDED_ON >= ${toSqlString(bounds.startDateTime)}
+        AND ci.ADDED_ON <  ${toSqlString(bounds.endExclusiveDateTime)}
+  ) insert_albums
+      ON insert_albums.ALBUM_ID = u.ALBUM_ID
+  WHERE u.DDEX_TYPE = 'AUDIO_ALBUM_UPDATE'
+    AND u.STATUS = 1
+    AND u.ADDED_ON >= ${toSqlString(bounds.startDateTime)}
+    AND u.ADDED_ON <  ${toSqlString(bounds.endExclusiveDateTime)}
+    AND u.TRACK_IDS IS NOT NULL
+    AND u.TRACK_IDS != ''
+    AND JSON_VALID(u.TRACK_IDS) = 1
+
+  UNION ALL
+
+  SELECT i.TRACK_IDS
+  FROM ${contentsTable} i
+  INNER JOIN ${pushTable} pi
+      ON pi.BATCH_ID = i.BATCH_ID
+     AND pi.STATUS = 1
+  INNER JOIN (
+      SELECT c.ALBUM_ID,
+             MAX(
+               CONCAT(
+                 COALESCE(DATE_FORMAT(c.ADDED_ON, '%Y-%m-%d %H:%i:%s'),'0000-00-00 00:00:00'),
+                 '|',
+                 COALESCE(DATE_FORMAT(c.UPDATED_ON, '%Y-%m-%d %H:%i:%s'),'0000-00-00 00:00:00'),
+                 '|',
+                 COALESCE(LPAD(c.BATCH_ID, 64, '0'), '0')
+               )
+             ) AS latest_key
+      FROM ${contentsTable} c
+      INNER JOIN ${pushTable} p
+          ON p.BATCH_ID = c.BATCH_ID
+         AND p.STATUS = 1
+      WHERE c.DDEX_TYPE = 'AUDIO_ALBUM_INSERT'
+        AND c.STATUS = 1
+        AND c.ADDED_ON >= ${toSqlString(bounds.startDateTime)}
+        AND c.ADDED_ON <  ${toSqlString(bounds.endExclusiveDateTime)}
+      GROUP BY c.ALBUM_ID
+  ) latest_insert
+     ON latest_insert.ALBUM_ID = i.ALBUM_ID
+     AND latest_insert.latest_key = CONCAT(
+           COALESCE(DATE_FORMAT(i.ADDED_ON, '%Y-%m-%d %H:%i:%s'),'0000-00-00 00:00:00'),
+           '|',
+           COALESCE(DATE_FORMAT(i.UPDATED_ON, '%Y-%m-%d %H:%i:%s'),'0000-00-00 00:00:00'),
+           '|',
+           COALESCE(LPAD(i.BATCH_ID, 64, '0'), '0')
+         )
+  LEFT JOIN (
+      SELECT DISTINCT cu.ALBUM_ID
+      FROM ${contentsTable} cu
+      INNER JOIN ${pushTable} pu
+          ON pu.BATCH_ID = cu.BATCH_ID
+         AND pu.STATUS = 1
+      WHERE cu.DDEX_TYPE = 'AUDIO_ALBUM_UPDATE'
+        AND cu.STATUS = 1
+        AND cu.ADDED_ON >= ${toSqlString(bounds.startDateTime)}
+        AND cu.ADDED_ON <  ${toSqlString(bounds.endExclusiveDateTime)}
+  ) update_albums
+      ON update_albums.ALBUM_ID = i.ALBUM_ID
+  WHERE i.DDEX_TYPE = 'AUDIO_ALBUM_INSERT'
+    AND i.STATUS = 1
+    AND i.ADDED_ON >= ${toSqlString(bounds.startDateTime)}
+    AND i.ADDED_ON <  ${toSqlString(bounds.endExclusiveDateTime)}
+    AND i.TRACK_IDS IS NOT NULL
+    AND i.TRACK_IDS != ''
+    AND JSON_VALID(i.TRACK_IDS) = 1
+    AND update_albums.ALBUM_ID IS NULL
+) d
+INNER JOIN (
+  ${TRACK_INDEX_SERIES_SQL}
+) nums
+  ON nums.n < JSON_LENGTH(d.TRACK_IDS)
+WHERE JSON_UNQUOTE(
+  JSON_EXTRACT(
+    JSON_KEYS(d.TRACK_IDS),
+    CONCAT('$[', nums.n, ']')
+  )
+) REGEXP '^[0-9]';`.trim()
+      : "-- Provide startDate and endDate to generate Delivered in Period query.";
+
+    const takenDownQuery = bounds
+      ? `
+SELECT COUNT(*) AS takedown_track_count
+FROM (
+  SELECT t.TRACK_IDS
+  FROM ${contentsTable} t
+  INNER JOIN ${pushTable} pt
+      ON pt.BATCH_ID = t.BATCH_ID
+     AND pt.STATUS = 1
+  INNER JOIN (
+      SELECT c.ALBUM_ID,
+             MAX(
+               CONCAT(
+                 COALESCE(DATE_FORMAT(c.DELETION_DATE, '%Y-%m-%d %H:%i:%s'),'0000-00-00 00:00:00'),
+                 '|',
+                 COALESCE(DATE_FORMAT(c.UPDATED_ON, '%Y-%m-%d %H:%i:%s'),'0000-00-00 00:00:00'),
+                 '|',
+                 COALESCE(LPAD(c.BATCH_ID, 64, '0'), '0')
+               )
+             ) AS latest_key
+      FROM ${contentsTable} c
+      INNER JOIN ${pushTable} p
+          ON p.BATCH_ID = c.BATCH_ID
+         AND p.STATUS = 1
+      WHERE c.DDEX_TYPE = 'AUDIO_ALBUM_TAKEDOWN'
+        AND c.STATUS = 1
+        AND c.DELETION_DATE >= ${toSqlString(bounds.startDateTime)}
+        AND c.DELETION_DATE <  ${toSqlString(bounds.endExclusiveDateTime)}
+      GROUP BY c.ALBUM_ID
+  ) latest_takedown
+     ON latest_takedown.ALBUM_ID = t.ALBUM_ID
+    AND latest_takedown.latest_key = CONCAT(
+          COALESCE(DATE_FORMAT(t.DELETION_DATE, '%Y-%m-%d %H:%i:%s'),'0000-00-00 00:00:00'),
+          '|',
+          COALESCE(DATE_FORMAT(t.UPDATED_ON, '%Y-%m-%d %H:%i:%s'),'0000-00-00 00:00:00'),
+          '|',
+          COALESCE(LPAD(t.BATCH_ID, 64, '0'), '0')
+        )
+  WHERE t.DDEX_TYPE = 'AUDIO_ALBUM_TAKEDOWN'
+    AND t.STATUS = 1
+    AND t.DELETION_DATE >= ${toSqlString(bounds.startDateTime)}
+    AND t.DELETION_DATE <  ${toSqlString(bounds.endExclusiveDateTime)}
+    AND t.TRACK_IDS IS NOT NULL
+    AND t.TRACK_IDS != ''
+    AND JSON_VALID(t.TRACK_IDS) = 1
+) d
+INNER JOIN (
+  ${TRACK_INDEX_SERIES_SQL}
+) nums
+  ON nums.n < JSON_LENGTH(d.TRACK_IDS)
+WHERE JSON_UNQUOTE(
+  JSON_EXTRACT(
+    JSON_KEYS(d.TRACK_IDS),
+    CONCAT('$[', nums.n, ']')
+  )
+) REGEXP '^[0-9]';`.trim()
+      : "-- Provide startDate and endDate to generate Taken Down in Period query.";
+
+    return {
+      partner: partnerKey,
+      retailerId: config.retailerId,
+      tables: config.partnerDbTables,
+      dateRange: bounds
+        ? {
+            startDateTime: bounds.startDateTime,
+            endExclusiveDateTime: bounds.endExclusiveDateTime,
+          }
+        : null,
+      queries: {
+        metaseaTotalContentLive: metaseaQuery,
+        partnerDbTotalContentLive: partnerDbTotalQuery,
+        partnerDbDeliveredInPeriod: deliveredQuery,
+        partnerDbTakenDownInPeriod: takenDownQuery,
+      },
+    };
+  };
+
+  if (normalizedPartner === "all") {
+    return {
+      partner: "all",
+      items: SUPPORTED_AUDIO_PARTNERS.map((partnerKey) =>
+        buildForPartner(partnerKey),
+      ),
+    };
+  }
+
+  return {
+    partner: normalizedPartner,
+    item: buildForPartner(normalizedPartner),
+  };
 }

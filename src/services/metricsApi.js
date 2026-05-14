@@ -321,3 +321,33 @@ export async function fetchAudioDetailsRows({
       : [],
   };
 }
+
+export async function fetchAudioPartnerDebugQueries({
+  partner,
+  startDate,
+  endDate,
+  retailerId,
+  signal,
+}) {
+  if (!partner) {
+    throw new Error('partner is required.');
+  }
+
+  const params = new URLSearchParams();
+  if (startDate && endDate) {
+    ensureDateInput(startDate, 'startDate');
+    ensureDateInput(endDate, 'endDate');
+    params.set('startDate', startDate);
+    params.set('endDate', endDate);
+  }
+  if (retailerId !== undefined && retailerId !== null && retailerId !== '') {
+    params.set('retailerId', retailerId);
+  }
+
+  const payload = await apiFetch(
+    `/api/audio/partners/${encodeURIComponent(partner)}/debug-queries?${params.toString()}`,
+    { signal },
+  );
+
+  return payload;
+}
