@@ -6,6 +6,8 @@ import {
   METASEA_AUDIO_PARTNER_RETAILER_IDS,
   SUPPORTED_AUDIO_PARTNERS,
   TOTAL_CONTENT_LIVE_CACHE_TTL_MS,
+  TOTAL_LIVE_METASEA_QUERY_TIMEOUT_MS,
+  TOTAL_LIVE_PARTNERDB_QUERY_TIMEOUT_MS,
 } from "../config.js";
 import { readBackendCache, writeBackendCache } from "../cache.js";
 import { getB2BPool, getMetaseaPool } from "../db.js";
@@ -54,6 +56,27 @@ function toSqlString(value) {
 
 function fillPostgresParam1(sql, value) {
   return sql.replace(/\$1\b/g, String(Number.parseInt(String(value), 10) || 0));
+}
+
+async function withTimeout(promise, timeoutMs, label) {
+  const safeTimeoutMs = Math.max(Number(timeoutMs) || 0, 1000);
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error(`${label} timed out after ${safeTimeoutMs}ms`);
+          error.code = "QUERY_TIMEOUT";
+          reject(error);
+        }, safeTimeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
 }
 
 function parseRetailerId(overrideValue) {
@@ -332,7 +355,15 @@ async function queryMetaseaTotalTracks(retailerId) {
   const startedAt = Date.now();
   logDebug("Running Metasea total-content-live query", { retailerId });
   const metaseaPool = getMetaseaPool();
-  const result = await metaseaPool.query(metaseaAmazonQuery, [retailerId]);
+  const result = await withTimeout(
+    metaseaPool.query({
+      text: metaseaAmazonQuery,
+      values: [retailerId],
+      statement_timeout: TOTAL_LIVE_METASEA_QUERY_TIMEOUT_MS,
+    }),
+    TOTAL_LIVE_METASEA_QUERY_TIMEOUT_MS + 1500,
+    `Metasea total-content-live (retailerId=${retailerId})`,
+  );
   const rawCount = result.rows?.[0]?.total_tracks ?? 0;
   const count = Number(rawCount) || 0;
   logDebug("Metasea query completed", {
@@ -388,7 +419,14 @@ async function queryPartnerDbTotalTracks({ contents, push }) {
   `;
 
   const b2bPool = getB2BPool();
-  const [rows] = await b2bPool.query(sql);
+  const [rows] = await withTimeout(
+    b2bPool.query({
+      sql,
+      timeout: TOTAL_LIVE_PARTNERDB_QUERY_TIMEOUT_MS,
+    }),
+    TOTAL_LIVE_PARTNERDB_QUERY_TIMEOUT_MS + 1500,
+    `Partner-db total-content-live (${contents})`,
+  );
   const rawCount = rows?.[0]?.total_track_count ?? 0;
   const count = Number(rawCount) || 0;
   logDebug("Partner-db total-content-live query completed", {
