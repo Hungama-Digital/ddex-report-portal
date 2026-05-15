@@ -426,6 +426,43 @@ body {
   margin-top: 0.5rem;
 }
 
+.back-to-top {
+  position: fixed;
+  bottom: 6rem;
+  right: 2rem;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
+  z-index: 90;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  animation: slide-up-fade 0.3s ease-out;
+}
+
+.back-to-top:hover {
+  transform: translateY(-5px);
+  background: var(--primary-dark);
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.5);
+}
+
+@keyframes slide-up-fade {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .mobile-only-profile {
   display: none !important;
 }
@@ -1033,15 +1070,78 @@ tr:hover td {
   border: 1px solid rgba(245, 158, 11, 0.2);
 }
 
-.empty-state {
-  padding: 4rem;
+.empty-state-container {
+  padding: 5rem 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   text-align: center;
-  color: var(--text-secondary);
+  gap: 1.2rem;
+  background: rgba(255, 255, 255, 0.01);
 }
 
-.empty-icon {
-  margin: 0 auto 1rem;
+.empty-state-illustration {
+  position: relative;
   color: var(--border-color);
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.illustration-badge {
+  position: absolute;
+  bottom: -5px;
+  right: -5px;
+  width: 28px;
+  height: 28px;
+  background: var(--accent-color);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.9rem;
+  border: 3px solid var(--bg-card);
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+}
+
+.empty-state-container h3 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.empty-state-container p {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  max-width: 400px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.clear-filters-btn {
+  margin-top: 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 0.65rem 1.5rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.clear-filters-btn:hover {
+  background: var(--accent-color);
+  color: white;
+  border-color: var(--accent-color);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
 }
 
 /* --- New Advanced Features CSS --- */

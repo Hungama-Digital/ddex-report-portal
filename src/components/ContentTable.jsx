@@ -400,10 +400,16 @@ const ContentTable = ({
             </tbody>
           </table>
         ) : (
-          <div className="empty-state">
-            <FileQuestion size={48} className="empty-icon" />
-            <h3>No contents found</h3>
-            <p>Try adjusting your filters or search term to see more results.</p>
+          <div className="empty-state-container">
+            <div className="empty-state-illustration">
+              <Search size={64} />
+              <div className="illustration-badge">?</div>
+            </div>
+            <h3>No results found</h3>
+            <p>We couldn't find any data matching your current filters or search term. Try broadening your search.</p>
+            <button className="clear-filters-btn" onClick={() => window.location.reload()}>
+              Reset All Filters
+            </button>
           </div>
         )}
       </div>

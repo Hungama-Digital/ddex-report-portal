@@ -12,7 +12,7 @@ import AdminPage from './components/AdminPage';
 import SearchPage from './components/SearchPage';
 import ConfirmDialog from './components/ConfirmDialog';
 import NotificationToasts from './components/NotificationToasts';
-import { Sun, Moon, Search, Download, Bell, Menu, User } from 'lucide-react';
+import { Sun, Moon, Search, Download, Bell, Menu, User, ChevronUp } from 'lucide-react';
 import {
   approvePendingUser,
   deleteReportById,
@@ -305,9 +305,29 @@ function App() {
     } catch (error) {
       setApprovalsState({ loading: false, rows: [] });
       setAdminUsersState({ loading: false, rows: [] });
-      addToast({ title: 'Admin', message: error?.message || 'Unable to fetch approvals.', type: 'error' });
+      addToast({ title: 'Admin', message: error?.message || 'Unable to fetch admin data.', type: 'error' });
     }
   }, [authUser, addToast]);
+
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const mainContentRef = useRef(null);
+
+  const handleScroll = (e) => {
+    if (e.target.scrollTop > 400) {
+      setShowBackToTop(true);
+    } else {
+      setShowBackToTop(false);
+    }
+  };
+
+  const scrollToTop = () => {
+    if (mainContentRef.current) {
+      mainContentRef.current.scrollTo({
+        top: 0,
+        behavior: 'smooth',
+      });
+    }
+  };
 
   useEffect(() => {
     if (!authUser || authUser.role !== 'admin' || activePage !== 'admin') {
@@ -1148,7 +1168,7 @@ function App() {
         onClose={() => setIsMobileMenuOpen(false)}
       />
 
-      <main className="main-content">
+      <main className="main-content" ref={mainContentRef} onScroll={handleScroll}>
         <header className="app-header">
           <button className="mobile-menu-btn" onClick={toggleMobileMenu}>
             <Menu size={24} />
@@ -1439,6 +1459,12 @@ function App() {
               </div>
             </div>
           </div>
+        )}
+
+        {showBackToTop && (
+          <button className="back-to-top" onClick={scrollToTop} title="Back to Top">
+            <ChevronUp size={24} />
+          </button>
         )}
       </main>
 
