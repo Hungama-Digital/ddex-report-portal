@@ -27,7 +27,7 @@ const ContentTable = ({
     switch (activeTab) {
       case 'totalLive': return `Currently Live Content${suffix}`;
       case 'deliveredThisMonth': return `Content Delivered in Period${suffix}`;
-      case 'takenDownThisMonth': return `Content Taken Down in Period${suffix}`;
+      case 'takenDownThisMonth': return `Content Take Down in Period${suffix}`;
       default: return 'Content Details';
     }
   };
@@ -330,8 +330,10 @@ const ContentTable = ({
       
       <div className="table-wrapper">
         {tableLoading ? (
-          <div className="empty-state">
+          <div className="table-loading-state">
+            <div className="loading-spinner"></div>
             <h3>Loading content rows...</h3>
+            <p>Please wait while we fetch the latest data for you.</p>
           </div>
         ) : tableError ? (
           <div className="empty-state">
