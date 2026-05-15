@@ -1,33 +1,68 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Info, AlertCircle, Loader2 } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Search, AlertCircle, Loader2 } from 'lucide-react';
 import { searchContents } from '../services/metricsApi';
+
+const RETAILER_LABELS = {
+  amazon: 'Amazon',
+  bytedance: 'ByteDance',
+  facebook: 'Facebook',
+  jiosaavn: 'JioSaavn',
+  spotify: 'Spotify',
+  virgin: 'Virgin',
+};
+
+const MATCHED_BY_LABELS = {
+  upc: 'UPC',
+  albumId: 'Album ID',
+  batchId: 'Batch ID',
+  trackId: 'Track ID',
+};
+
+const SEARCH_TYPE_OPTIONS = [
+  { value: 'all', label: 'All Identifiers' },
+  { value: 'upc', label: 'UPC' },
+  { value: 'albumId', label: 'Album ID' },
+  { value: 'batchId', label: 'Batch ID' },
+  { value: 'trackId', label: 'Track ID' },
+];
 
 const SearchPage = ({ addToast }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchType, setSearchType] = useState('all');
   const [results, setResults] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [hasSearched, setHasSearched] = useState(false);
 
   const handleSearch = useCallback(async (e) => {
     if (e) e.preventDefault();
-    if (!searchQuery.trim()) return;
+    const q = searchQuery.trim();
+    if (!q) return;
 
     setLoading(true);
     setError(null);
+    setHasSearched(true);
+
     try {
-      const response = await searchContents({ query: searchQuery, type: searchType });
+      const response = await searchContents({ query: q, type: searchType });
       setResults(response.rows);
+      setTotal(response.total || response.rows.length);
       if (response.rows.length === 0) {
         addToast({ title: 'Search', message: 'No results found for your query.', type: 'info' });
       }
     } catch (err) {
-      setError(err.message || 'Search failed. Please try again.');
-      addToast({ title: 'Search Error', message: err.message || 'Search failed.', type: 'error' });
+      const msg = err.message || 'Search failed. Please try again.';
+      setError(msg);
+      addToast({ title: 'Search Error', message: msg, type: 'error' });
     } finally {
       setLoading(false);
     }
   }, [searchQuery, searchType, addToast]);
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') handleSearch(e);
+  };
 
   return (
     <div className="search-page-container">
@@ -38,9 +73,10 @@ const SearchPage = ({ addToast }) => {
               <Search className="field-icon" size={20} />
               <input
                 type="text"
-                placeholder="Search by UPC, ISRC, Track ID or Album ID..."
+                placeholder="Enter UPC, Album ID, Batch ID or Track ID..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleKeyDown}
                 className="search-input"
               />
             </div>
@@ -49,13 +85,15 @@ const SearchPage = ({ addToast }) => {
               value={searchType}
               onChange={(e) => setSearchType(e.target.value)}
             >
-              <option value="all">All Identifiers</option>
-              <option value="upc">UPC ID</option>
-              <option value="isrc">ISRC</option>
-              <option value="trackId">Track ID</option>
-              <option value="albumId">Album ID</option>
+              {SEARCH_TYPE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
             </select>
-            <button type="submit" className="search-submit-btn" disabled={loading || !searchQuery.trim()}>
+            <button
+              type="submit"
+              className="search-submit-btn"
+              disabled={loading || !searchQuery.trim()}
+            >
               {loading ? <Loader2 className="animate-spin" size={18} /> : 'Search'}
             </button>
           </div>
@@ -64,13 +102,16 @@ const SearchPage = ({ addToast }) => {
 
       <div className="search-results-card glass">
         <div className="card-header">
-          <h3>Search Results {results.length > 0 && `(${results.length})`}</h3>
+          <h3>
+            Search Results
+            {total > 0 && <span className="result-count"> ({total})</span>}
+          </h3>
         </div>
 
         {loading ? (
           <div className="results-loading">
             <Loader2 className="animate-spin" size={40} />
-            <p>Searching repository...</p>
+            <p>Searching across all partners...</p>
           </div>
         ) : error ? (
           <div className="results-error">
@@ -78,43 +119,60 @@ const SearchPage = ({ addToast }) => {
             <p>{error}</p>
             <button className="retry-btn" onClick={handleSearch}>Try Again</button>
           </div>
+        ) : !hasSearched ? (
+          <div className="results-empty">
+            <Search size={40} />
+            <p>Enter a value above and click Search.</p>
+          </div>
         ) : results.length === 0 ? (
           <div className="results-empty">
             <Search size={40} />
-            <p>{searchQuery ? 'No matches found.' : 'Enter a query to start searching.'}</p>
+            <p>No matches found.</p>
           </div>
         ) : (
           <div className="table-wrapper">
             <table className="results-table">
               <thead>
                 <tr>
-                  <th>Content ID</th>
-                  <th>Type</th>
-                  <th>Title</th>
-                  <th>UPC / ISRC</th>
-                  <th>Vendor ID</th>
+                  <th>Retailer</th>
+                  <th>Album ID</th>
+                  <th>Album Title</th>
+                  <th>UPC</th>
+                  <th>Batch ID</th>
+                  <th>DDEX Type</th>
                   <th>Status</th>
-                  <th>Retailers</th>
+                  <th>Added On</th>
+                  <th>Updated On</th>
+                  {searchType === 'all' && <th>Matched By</th>}
                 </tr>
               </thead>
               <tbody>
-                {results.map((item) => (
-                  <tr key={item.id}>
-                    <td className="id-cell">{item.id}</td>
+                {results.map((item, index) => (
+                  <tr key={`${item.retailer}-${item.albumId}-${item.batchId}-${index}`}>
                     <td>
-                      <span className={`type-pill ${item.contentType.toLowerCase()}`}>
-                        {item.contentType}
+                      <span className="retailer-badge">
+                        {RETAILER_LABELS[item.retailer] || item.retailer}
                       </span>
                     </td>
-                    <td className="title-cell">{item.title || '-'}</td>
-                    <td className="code-cell">{item.code || '-'}</td>
-                    <td>{item.vendorId || '-'}</td>
+                    <td className="id-cell">{item.albumId || '-'}</td>
+                    <td className="title-cell">{item.albumTitle || '-'}</td>
+                    <td className="code-cell">{item.upc || '-'}</td>
+                    <td className="code-cell">{item.batchId || '-'}</td>
                     <td>
-                      <span className={`status-pill ${item.status.toLowerCase().includes('live') ? 'status-live' : ''}`}>
-                        {item.status}
+                      <span className={`type-pill ${(item.ddexType || '').toLowerCase().replace(/_/g, '-')}`}>
+                        {item.ddexType || '-'}
                       </span>
                     </td>
-                    <td className="retailer-count">{item.retailerCount} Retailers</td>
+                    <td>{item.status !== '' ? item.status : '-'}</td>
+                    <td className="date-cell">{item.addedOn || '-'}</td>
+                    <td className="date-cell">{item.updatedOn || '-'}</td>
+                    {searchType === 'all' && (
+                      <td>
+                        <span className="matched-by-pill">
+                          {MATCHED_BY_LABELS[item.matchedBy] || item.matchedBy || '-'}
+                        </span>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

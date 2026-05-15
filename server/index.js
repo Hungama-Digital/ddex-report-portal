@@ -16,10 +16,10 @@ import {
   getAudioPartnerDebugQueries,
   getAudioPartnerSummary,
   getAudioPartnerTotalContentLive,
-  searchAudioContent,
   getAudioPartnerPeriodMetrics,
   warmAllPartnerCaches,
 } from './services/totalContentLiveService.js';
+import { searchContents } from './services/searchService.js';
 import {
   approveUser,
   createAccessRequest,
@@ -514,13 +514,14 @@ app.get('/api/audio/partners/:partner/debug-queries', requireAuth, async (req, r
   }
 });
 
-app.get('/api/audio/search', requireAuth, async (req, res, next) => {
+app.get('/api/search', requireAuth, async (req, res, next) => {
   try {
-    const results = await searchAudioContent({
-      query: req.query.q,
-      type: req.query.type,
+    const result = await searchContents({
+      query: req.query.query,
+      type: req.query.type || 'all',
+      limit: req.query.limit,
     });
-    res.json(results);
+    res.json({ ok: true, ...result });
   } catch (error) {
     next(error);
   }

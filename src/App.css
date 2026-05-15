@@ -2300,3 +2300,38 @@ tr:hover td {
   color: var(--text-secondary);
 }
 
+.retailer-badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--accent-color);
+  white-space: nowrap;
+}
+
+.matched-by-pill {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(139, 92, 246, 0.1);
+  color: #7c3aed;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.date-cell {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.result-count {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+

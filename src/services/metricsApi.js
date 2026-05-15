@@ -390,18 +390,19 @@ export async function fetchAudioPartnerDebugQueries({
 
 export async function searchContents({ query, type, signal }) {
   if (!query) {
-    return { rows: [] };
+    return { rows: [], total: 0 };
   }
 
   const params = new URLSearchParams();
-  params.set('q', query);
-  if (type) {
+  params.set('query', query);
+  if (type && type !== 'all') {
     params.set('type', type);
   }
 
-  const payload = await apiFetch(`/api/audio/search?${params.toString()}`, { signal });
+  const payload = await apiFetch(`/api/search?${params.toString()}`, { signal });
   return {
     rows: Array.isArray(payload.rows) ? payload.rows : [],
+    total: Number(payload.total) || 0,
   };
 }
 
