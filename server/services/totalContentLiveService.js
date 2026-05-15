@@ -1943,3 +1943,69 @@ WHERE JSON_UNQUOTE(
     item: buildForPartner(normalizedPartner),
   };
 }
+
+export async function searchAudioContent({ query, type }) {
+  const startedAt = Date.now();
+  const q = String(query || "").trim();
+  if (!q) {
+    return { rows: [] };
+  }
+
+  logDebug("Running search-audio-content query", { query: q, type });
+
+  const metaseaPool = getMetaseaPool();
+  let sql = `
+    SELECT 
+      tc.content_id, 
+      tc.content_code, 
+      tc.content_type_id,
+      COALESCE(cd.content_title, '') AS content_title,
+      tc.vendor_id,
+      STRING_AGG(DISTINCT rs.rights_status, ', ') AS rights_statuses,
+      COUNT(DISTINCT rs.retailer_id) AS retailer_count
+    FROM mvcms.tbl_contents tc
+    LEFT JOIN mvcms.tbl_content_details cd 
+      ON tc.content_id = cd.content_id 
+      AND cd.language_id = 'eng'
+    LEFT JOIN mvcms.tbl_content_rights_status rs
+      ON tc.content_id = rs.content_id
+    WHERE 
+  `;
+
+  let params = [];
+  if (type === "albumId" || type === "trackId") {
+    const id = Number.parseInt(q, 10);
+    if (Number.isNaN(id)) {
+      throw new Error("ID must be a number.");
+    }
+    sql += "tc.content_id = $1";
+    params = [id];
+  } else if (type === "upc" || type === "isrc") {
+    sql += "tc.content_code = $1";
+    params = [q];
+  } else {
+    sql += "(tc.content_code = $1 OR tc.content_id::text = $1)";
+    params = [q];
+  }
+
+  sql += `
+    GROUP BY tc.content_id, tc.content_code, tc.content_type_id, cd.content_title, tc.vendor_id
+    LIMIT 50
+  `;
+
+  const result = await metaseaPool.query(sql, params);
+  const rows = result.rows.map(row => ({
+    id: String(row.content_id),
+    code: row.content_code || '',
+    title: row.content_title || '',
+    typeId: row.content_type_id,
+    vendorId: row.vendor_id,
+    status: row.rights_statuses || 'NONE',
+    retailerCount: Number(row.retailer_count) || 0,
+    contentType: row.content_type_id === 21 ? 'Track' : (row.content_type_id === 1 ? 'Album' : 'Other')
+  }));
+
+  logDebug("Search completed", { count: rows.length, durationMs: Date.now() - startedAt });
+  return { rows };
+}
+

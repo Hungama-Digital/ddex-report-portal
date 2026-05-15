@@ -16,6 +16,7 @@ import {
   getAudioPartnerDebugQueries,
   getAudioPartnerSummary,
   getAudioPartnerTotalContentLive,
+  searchAudioContent,
 } from './services/totalContentLiveService.js';
 import {
   approveUser,
@@ -491,6 +492,21 @@ app.get('/api/audio/partners/:partner/debug-queries', requireAuth, async (req, r
     next(error);
   }
 });
+
+app.get('/api/audio/search', requireAuth, async (req, res, next) => {
+  try {
+    const results = await searchAudioContent({
+      query: req.query.q,
+      type: req.query.type,
+    });
+    res.json(results);
+  } catch (error) {
+    next(error);
+  }
+});
+
+
+
 
 app.use((error, _req, res, next) => {
   void next;

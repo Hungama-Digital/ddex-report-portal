@@ -9,6 +9,7 @@ import Sidebar from './components/Sidebar';
 import AuthScreen from './components/AuthScreen';
 import ReportsPage from './components/ReportsPage';
 import AdminPage from './components/AdminPage';
+import SearchPage from './components/SearchPage';
 import ConfirmDialog from './components/ConfirmDialog';
 import NotificationToasts from './components/NotificationToasts';
 import QueryDebugPanel from './components/QueryDebugPanel';
@@ -1196,7 +1197,9 @@ function App() {
                       ? 'Reports'
                       : activePage === 'admin'
                         ? 'Admin'
-                        : 'Settings'}
+                        : activePage === 'search'
+                          ? 'Search Contents'
+                          : 'Settings'}
             </h1>
             <span className="app-subtitle">
               {activePage === 'dashboard'
@@ -1207,7 +1210,9 @@ function App() {
                     ? 'EXPORT REPOSITORY'
                     : activePage === 'admin'
                       ? 'ACCESS CONTROL'
-                      : 'PREFERENCES & CONFIGURATION'}
+                      : activePage === 'search'
+                        ? 'REPOSITORY LOOKUP'
+                        : 'PREFERENCES & CONFIGURATION'}
             </span>
           </div>
           <div className="header-actions">
@@ -1455,8 +1460,11 @@ function App() {
             onReject={handleRejectUser}
             onRevoke={handleRevokeUser}
           />
+        ) : activePage === 'search' ? (
+          <SearchPage addToast={addToast} />
         ) : (
           <div className="settings-container">
+
             <div className="settings-card">
               <h2>Theme Preferences</h2>
               <div className="setting-row">

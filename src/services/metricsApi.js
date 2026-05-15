@@ -351,3 +351,21 @@ export async function fetchAudioPartnerDebugQueries({
 
   return payload;
 }
+
+export async function searchContents({ query, type, signal }) {
+  if (!query) {
+    return { rows: [] };
+  }
+
+  const params = new URLSearchParams();
+  params.set('q', query);
+  if (type) {
+    params.set('type', type);
+  }
+
+  const payload = await apiFetch(`/api/audio/search?${params.toString()}`, { signal });
+  return {
+    rows: Array.isArray(payload.rows) ? payload.rows : [],
+  };
+}
+

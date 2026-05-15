@@ -10,6 +10,7 @@ import {
   Shield,
   LogOut,
   Bell,
+  Search,
 } from 'lucide-react';
 
 const Sidebar = ({ activePage, setActivePage, authUser, reportsNotificationCount = 0, onLogout }) => {
@@ -77,6 +78,15 @@ const Sidebar = ({ activePage, setActivePage, authUser, reportsNotificationCount
             </span>
           ) : null}
         </button>
+
+        <button
+          className={`nav-item ${activePage === 'search' ? 'active' : ''}`}
+          onClick={() => setActivePage('search')}
+        >
+          <Search size={20} />
+          <span className="nav-text">Search Contents</span>
+        </button>
+
 
         {authUser?.role === 'admin' ? (
           <button
