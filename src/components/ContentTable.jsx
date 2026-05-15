@@ -417,50 +417,55 @@ const ContentTable = ({
       </div>
 
       {totalPages > 1 && (
-        <div className="pagination pagination-bottom-right">
-          <button 
-            className="pagination-jump"
-            disabled={currentPage === 1} 
-            onClick={() => setCurrentPage(1)}
-            title="First Page"
-          >
-            <ChevronsLeft size={20} />
-          </button>
-          <button 
-            disabled={currentPage === 1} 
-            onClick={() => setCurrentPage(p => p - 1)}
-            title="Previous"
-          >
-            <ChevronLeft size={20} />
-          </button>
-          {paginationModel.map((entry, index) =>
-            entry === 'ellipsis' ? (
-              <span key={`ellipsis-bottom-${index}`} className="pagination-ellipsis">...</span>
-            ) : (
-              <button
-                key={`bottom-${entry}`}
-                className={`page-number ${currentPage === entry ? 'active' : ''}`}
-                onClick={() => setCurrentPage(entry)}
-              >
-                {entry}
-              </button>
-            ),
-          )}
-          <button 
-            disabled={currentPage === totalPages} 
-            onClick={() => setCurrentPage(p => p + 1)}
-            title="Next"
-          >
-            <ChevronRight size={20} />
-          </button>
-          <button 
-            className="pagination-jump"
-            disabled={currentPage === totalPages} 
-            onClick={() => setCurrentPage(totalPages)}
-            title="Last Page"
-          >
-            <ChevronsRight size={20} />
-          </button>
+        <div className="pagination">
+          <div className="pagination-info">
+            Showing <span>{(currentPage - 1) * itemsPerPage + 1}</span> to <span>{Math.min(currentPage * itemsPerPage, searchedData.length)}</span> of <span>{searchedData.length.toLocaleString()}</span> entries
+          </div>
+          <div className="pagination-controls">
+            <button 
+              className="pagination-jump"
+              disabled={currentPage === 1} 
+              onClick={() => setCurrentPage(1)}
+              title="First Page"
+            >
+              <ChevronsLeft size={20} />
+            </button>
+            <button 
+              disabled={currentPage === 1} 
+              onClick={() => setCurrentPage(p => p - 1)}
+              title="Previous"
+            >
+              <ChevronLeft size={20} />
+            </button>
+            {paginationModel.map((entry, index) =>
+              entry === 'ellipsis' ? (
+                <span key={`ellipsis-bottom-${index}`} className="pagination-ellipsis">...</span>
+              ) : (
+                <button
+                  key={`bottom-${entry}`}
+                  className={`page-number ${currentPage === entry ? 'active' : ''}`}
+                  onClick={() => setCurrentPage(entry)}
+                >
+                  {entry}
+                </button>
+              ),
+            )}
+            <button 
+              disabled={currentPage === totalPages} 
+              onClick={() => setCurrentPage(p => p + 1)}
+              title="Next"
+            >
+              <ChevronRight size={20} />
+            </button>
+            <button 
+              className="pagination-jump"
+              disabled={currentPage === totalPages} 
+              onClick={() => setCurrentPage(totalPages)}
+              title="Last Page"
+            >
+              <ChevronsRight size={20} />
+            </button>
+          </div>
         </div>
       )}
 

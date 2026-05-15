@@ -1310,13 +1310,31 @@ tr:hover td {
 /* Pagination */
 .pagination {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   align-items: center;
-  gap: 0.35rem;
+  gap: 1rem;
   padding: 1rem 1.5rem;
   border-top: 1px solid var(--border-color);
   background: rgba(255, 255, 255, 0.02);
 }
+
+.pagination-info {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.pagination-info span {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .pagination button {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
@@ -1358,9 +1376,7 @@ tr:hover td {
   background: transparent;
   padding: 0;
 }
-.pagination-bottom-right {
-  justify-content: flex-end;
-}
+
 .pagination button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
