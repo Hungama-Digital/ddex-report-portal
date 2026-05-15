@@ -39,7 +39,9 @@ const TRACK_INDEX_SERIES_SQL = `
 const inflightTotalContentLive = new Map();
 const inflightTotalContentLiveAll = new Map();
 const inflightAudioSummary = new Map();
+const inflightAudioSummaryAll = new Map();
 const inflightAudioPeriodMetrics = new Map();
+const inflightAudioPeriodMetricsAll = new Map();
 const inflightAudioRecentDeliveries = new Map();
 const inflightAudioDetailsRows = new Map();
 const albumMetadataCache = new Map();
@@ -444,9 +446,6 @@ async function queryPartnerDbDeliveredTracks({ tables, bounds }) {
   const sql = `
     SELECT COALESCE(SUM(JSON_LENGTH(d.TRACK_IDS)), 0) AS delivered_track_count
     FROM (
-      /*
-        Latest UPDATE per album (in range), only for albums that had INSERT in range
-      */
       SELECT u.TRACK_IDS
       FROM ${contentsTable} u
       INNER JOIN ${pushTable} pu
@@ -515,9 +514,6 @@ async function queryPartnerDbDeliveredTracks({ tables, bounds }) {
 
       UNION ALL
 
-      /*
-        Latest INSERT per album (in range), only where UPDATE does not exist in range
-      */
       SELECT i.TRACK_IDS
       FROM ${contentsTable} i
       INNER JOIN ${pushTable} pi
@@ -705,6 +701,57 @@ async function queryPartnerDbTakenDownTracks({ tables, bounds }) {
   return count;
 }
 
+async function queryPartnerDbLiveRows({ partnerKey, tables, limit }) {
+  const startedAt = Date.now();
+  const contentsTable = escapeMysqlIdentifier(tables.contents);
+  const pushTable = escapeMysqlIdentifier(tables.push);
+  logDebug("Running partner-db live-rows query", {
+    partner: partnerKey,
+    contentsTable: tables.contents,
+    pushTable: tables.push,
+    limit,
+  });
+
+  const sql = `
+    SELECT
+      ? AS partnerKey,
+      c.ALBUM_ID AS albumId,
+      c.BATCH_ID AS batchId,
+      c.DDEX_TYPE AS ddexType,
+      DATE_FORMAT(c.ADDED_ON, '%Y-%m-%d %H:%i:%s') AS addedOn,
+      DATE_FORMAT(c.UPDATED_ON, '%Y-%m-%d %H:%i:%s') AS updatedOn,
+      c.TRACK_IDS AS trackIdsJson
+    FROM (
+      SELECT ALBUM_ID, MAX(ADDED_ON) AS max_added_on
+      FROM ${contentsTable}
+      WHERE STATUS = 1
+        AND DDEX_TYPE IN ('AUDIO_ALBUM_INSERT', 'AUDIO_ALBUM_UPDATE', 'AUDIO_ALBUM_TAKEDOWN')
+      GROUP BY ALBUM_ID
+    ) latest
+    INNER JOIN ${contentsTable} c
+        ON c.ALBUM_ID = latest.ALBUM_ID
+       AND c.ADDED_ON = latest.max_added_on
+       AND c.STATUS = 1
+       AND c.DDEX_TYPE IN ('AUDIO_ALBUM_INSERT', 'AUDIO_ALBUM_UPDATE')
+    INNER JOIN ${pushTable} p
+        ON p.BATCH_ID = c.BATCH_ID
+       AND p.STATUS = 1
+    ORDER BY c.ADDED_ON DESC, c.UPDATED_ON DESC, c.BATCH_ID DESC
+    LIMIT ?;
+  `;
+
+  const b2bPool = getB2BPool();
+  const [rows] = await b2bPool.query(sql, [partnerKey, limit]);
+  const deliveries = (rows || []).map((row) => mapRowWithTrackIds(row, partnerKey));
+  logDebug("Partner-db live-rows query completed", {
+    partner: partnerKey,
+    contentsTable: tables.contents,
+    returnedRows: deliveries.length,
+    durationMs: Date.now() - startedAt,
+  });
+  return deliveries;
+}
+
 async function queryPartnerDbRecentDeliveriesRows({
   partnerKey,
   tables,
@@ -733,9 +780,6 @@ async function queryPartnerDbRecentDeliveriesRows({
       DATE_FORMAT(d.UPDATED_ON, '%Y-%m-%d %H:%i:%s') AS updatedOn,
       d.TRACK_IDS AS trackIdsJson
     FROM (
-      /*
-        Latest UPDATE per album (in range), only for albums that had INSERT in range
-      */
       SELECT u.ALBUM_ID, u.BATCH_ID, u.DDEX_TYPE, u.ADDED_ON, u.UPDATED_ON, u.TRACK_IDS
       FROM ${contentsTable} u
       INNER JOIN ${pushTable} pu
@@ -745,15 +789,9 @@ async function queryPartnerDbRecentDeliveriesRows({
           SELECT c.ALBUM_ID,
                  MAX(
                    CONCAT(
-                     COALESCE(
-                       DATE_FORMAT(c.ADDED_ON, '%Y-%m-%d %H:%i:%s'),
-                       '0000-00-00 00:00:00'
-                     ),
+                     COALESCE(DATE_FORMAT(c.ADDED_ON, '%Y-%m-%d %H:%i:%s'),'0000-00-00 00:00:00'),
                      '|',
-                     COALESCE(
-                       DATE_FORMAT(c.UPDATED_ON, '%Y-%m-%d %H:%i:%s'),
-                       '0000-00-00 00:00:00'
-                     ),
+                     COALESCE(DATE_FORMAT(c.UPDATED_ON, '%Y-%m-%d %H:%i:%s'),'0000-00-00 00:00:00'),
                      '|',
                      COALESCE(LPAD(c.BATCH_ID, 64, '0'), '0')
                    )
@@ -770,15 +808,9 @@ async function queryPartnerDbRecentDeliveriesRows({
       ) latest_update
          ON latest_update.ALBUM_ID = u.ALBUM_ID
          AND latest_update.latest_key = CONCAT(
-               COALESCE(
-                 DATE_FORMAT(u.ADDED_ON, '%Y-%m-%d %H:%i:%s'),
-                 '0000-00-00 00:00:00'
-               ),
+               COALESCE(DATE_FORMAT(u.ADDED_ON, '%Y-%m-%d %H:%i:%s'),'0000-00-00 00:00:00'),
                '|',
-               COALESCE(
-                 DATE_FORMAT(u.UPDATED_ON, '%Y-%m-%d %H:%i:%s'),
-                 '0000-00-00 00:00:00'
-               ),
+               COALESCE(DATE_FORMAT(u.UPDATED_ON, '%Y-%m-%d %H:%i:%s'),'0000-00-00 00:00:00'),
                '|',
                COALESCE(LPAD(u.BATCH_ID, 64, '0'), '0')
              )
@@ -804,9 +836,6 @@ async function queryPartnerDbRecentDeliveriesRows({
 
       UNION ALL
 
-      /*
-        Latest INSERT per album (in range), only where UPDATE does not exist in range
-      */
       SELECT i.ALBUM_ID, i.BATCH_ID, i.DDEX_TYPE, i.ADDED_ON, i.UPDATED_ON, i.TRACK_IDS
       FROM ${contentsTable} i
       INNER JOIN ${pushTable} pi
@@ -816,15 +845,9 @@ async function queryPartnerDbRecentDeliveriesRows({
           SELECT c.ALBUM_ID,
                  MAX(
                    CONCAT(
-                     COALESCE(
-                       DATE_FORMAT(c.ADDED_ON, '%Y-%m-%d %H:%i:%s'),
-                       '0000-00-00 00:00:00'
-                     ),
+                     COALESCE(DATE_FORMAT(c.ADDED_ON, '%Y-%m-%d %H:%i:%s'),'0000-00-00 00:00:00'),
                      '|',
-                     COALESCE(
-                       DATE_FORMAT(c.UPDATED_ON, '%Y-%m-%d %H:%i:%s'),
-                       '0000-00-00 00:00:00'
-                     ),
+                     COALESCE(DATE_FORMAT(c.UPDATED_ON, '%Y-%m-%d %H:%i:%s'),'0000-00-00 00:00:00'),
                      '|',
                      COALESCE(LPAD(c.BATCH_ID, 64, '0'), '0')
                    )
@@ -841,15 +864,9 @@ async function queryPartnerDbRecentDeliveriesRows({
       ) latest_insert
          ON latest_insert.ALBUM_ID = i.ALBUM_ID
          AND latest_insert.latest_key = CONCAT(
-               COALESCE(
-                 DATE_FORMAT(i.ADDED_ON, '%Y-%m-%d %H:%i:%s'),
-                 '0000-00-00 00:00:00'
-               ),
+               COALESCE(DATE_FORMAT(i.ADDED_ON, '%Y-%m-%d %H:%i:%s'),'0000-00-00 00:00:00'),
                '|',
-               COALESCE(
-                 DATE_FORMAT(i.UPDATED_ON, '%Y-%m-%d %H:%i:%s'),
-                 '0000-00-00 00:00:00'
-               ),
+               COALESCE(DATE_FORMAT(i.UPDATED_ON, '%Y-%m-%d %H:%i:%s'),'0000-00-00 00:00:00'),
                '|',
                COALESCE(LPAD(i.BATCH_ID, 64, '0'), '0')
              )
@@ -898,77 +915,16 @@ async function queryPartnerDbRecentDeliveriesRows({
   const b2bPool = getB2BPool();
   const [rows] = await b2bPool.query(sql, params);
   const deliveries = (rows || []).map((row) => mapRowWithTrackIds(row, partnerKey));
-
   logDebug("Partner-db recent-deliveries query completed", {
     partner: partnerKey,
     contentsTable: tables.contents,
     returnedRows: deliveries.length,
     durationMs: Date.now() - startedAt,
   });
-
   return deliveries;
 }
 
-async function queryPartnerDbLiveRows({ partnerKey, tables, limit }) {
-  const startedAt = Date.now();
-  const contentsTable = escapeMysqlIdentifier(tables.contents);
-  const pushTable = escapeMysqlIdentifier(tables.push);
-  logDebug("Running partner-db live-rows query", {
-    partner: partnerKey,
-    contentsTable: tables.contents,
-    pushTable: tables.push,
-    limit,
-  });
-
-  const sql = `
-    SELECT
-      ? AS partnerKey,
-      c.ALBUM_ID AS albumId,
-      c.BATCH_ID AS batchId,
-      c.DDEX_TYPE AS ddexType,
-      DATE_FORMAT(c.ADDED_ON, '%Y-%m-%d %H:%i:%s') AS addedOn,
-      DATE_FORMAT(c.UPDATED_ON, '%Y-%m-%d %H:%i:%s') AS updatedOn,
-      c.TRACK_IDS AS trackIdsJson
-    FROM (
-      SELECT ALBUM_ID, MAX(ADDED_ON) AS max_added_on
-      FROM ${contentsTable}
-      WHERE STATUS = 1
-        AND DDEX_TYPE IN ('AUDIO_ALBUM_INSERT', 'AUDIO_ALBUM_UPDATE', 'AUDIO_ALBUM_TAKEDOWN')
-      GROUP BY ALBUM_ID
-    ) latest
-    INNER JOIN ${contentsTable} c
-        ON c.ALBUM_ID = latest.ALBUM_ID
-       AND c.ADDED_ON = latest.max_added_on
-       AND c.STATUS = 1
-       AND c.DDEX_TYPE IN ('AUDIO_ALBUM_INSERT', 'AUDIO_ALBUM_UPDATE')
-       AND c.TRACK_IDS IS NOT NULL
-       AND c.TRACK_IDS != ''
-       AND JSON_VALID(c.TRACK_IDS) = 1
-    INNER JOIN ${pushTable} p
-        ON p.BATCH_ID = c.BATCH_ID
-       AND p.STATUS = 1
-    ORDER BY c.ADDED_ON DESC, c.UPDATED_ON DESC, c.BATCH_ID DESC
-    LIMIT ?;
-  `;
-
-  const b2bPool = getB2BPool();
-  const [rows] = await b2bPool.query(sql, [partnerKey, limit]);
-  const deliveries = (rows || []).map((row) => mapRowWithTrackIds(row, partnerKey));
-  logDebug("Partner-db live-rows query completed", {
-    partner: partnerKey,
-    contentsTable: tables.contents,
-    returnedRows: deliveries.length,
-    durationMs: Date.now() - startedAt,
-  });
-  return deliveries;
-}
-
-async function queryPartnerDbTakenDownRows({
-  partnerKey,
-  tables,
-  bounds,
-  limit,
-}) {
+async function queryPartnerDbTakenDownRows({ partnerKey, tables, bounds, limit }) {
   const startedAt = Date.now();
   const contentsTable = escapeMysqlIdentifier(tables.contents);
   const pushTable = escapeMysqlIdentifier(tables.push);
@@ -987,11 +943,12 @@ async function queryPartnerDbTakenDownRows({
       d.ALBUM_ID AS albumId,
       d.BATCH_ID AS batchId,
       d.DDEX_TYPE AS ddexType,
-      DATE_FORMAT(d.DELETION_DATE, '%Y-%m-%d %H:%i:%s') AS addedOn,
+      DATE_FORMAT(d.ADDED_ON, '%Y-%m-%d %H:%i:%s') AS addedOn,
       DATE_FORMAT(d.UPDATED_ON, '%Y-%m-%d %H:%i:%s') AS updatedOn,
-      d.TRACK_IDS AS trackIdsJson
+      d.TRACK_IDS AS trackIdsJson,
+      DATE_FORMAT(d.DELETION_DATE, '%Y-%m-%d %H:%i:%s') AS deletionDate
     FROM (
-      SELECT t.ALBUM_ID, t.BATCH_ID, t.DDEX_TYPE, t.DELETION_DATE, t.UPDATED_ON, t.TRACK_IDS
+      SELECT t.ALBUM_ID, t.BATCH_ID, t.DDEX_TYPE, t.ADDED_ON, t.UPDATED_ON, t.TRACK_IDS, t.DELETION_DATE
       FROM ${contentsTable} t
       INNER JOIN ${pushTable} pt
           ON pt.BATCH_ID = t.BATCH_ID
@@ -1024,19 +981,19 @@ async function queryPartnerDbTakenDownRows({
           GROUP BY c.ALBUM_ID
       ) latest_takedown
          ON latest_takedown.ALBUM_ID = t.ALBUM_ID
-        AND latest_takedown.latest_key = CONCAT(
-              COALESCE(
-                DATE_FORMAT(t.DELETION_DATE, '%Y-%m-%d %H:%i:%s'),
-                '0000-00-00 00:00:00'
-              ),
-              '|',
-              COALESCE(
-                DATE_FORMAT(t.UPDATED_ON, '%Y-%m-%d %H:%i:%s'),
-                '0000-00-00 00:00:00'
-              ),
-              '|',
-              COALESCE(LPAD(t.BATCH_ID, 64, '0'), '0')
-            )
+         AND latest_takedown.latest_key = CONCAT(
+               COALESCE(
+                 DATE_FORMAT(t.DELETION_DATE, '%Y-%m-%d %H:%i:%s'),
+                 '0000-00-00 00:00:00'
+               ),
+               '|',
+               COALESCE(
+                 DATE_FORMAT(t.UPDATED_ON, '%Y-%m-%d %H:%i:%s'),
+                 '0000-00-00 00:00:00'
+               ),
+               '|',
+               COALESCE(LPAD(t.BATCH_ID, 64, '0'), '0')
+             )
       WHERE t.DDEX_TYPE = 'AUDIO_ALBUM_TAKEDOWN'
         AND t.STATUS = 1
         AND t.DELETION_DATE >= ?
@@ -1388,6 +1345,70 @@ async function executeAudioPartnerSummary(config, bounds) {
   };
 }
 
+async function executeAllPartnersSummary({ bounds, bypassCache = false } = {}) {
+  logInfo("Fetching summary for all partners", {
+    partnerCount: SUPPORTED_AUDIO_PARTNERS.length,
+    startDate: bounds.startDateTime,
+    endDate: bounds.endExclusiveDateTime,
+  });
+
+  const results = await Promise.allSettled(
+    SUPPORTED_AUDIO_PARTNERS.map((partnerKey) => {
+      const config = resolvePartnerConfiguration(partnerKey);
+      return executeAudioPartnerSummary(config, bounds);
+    })
+  );
+
+  const successful = [];
+  const failedPartners = [];
+  for (let index = 0; index < results.length; index += 1) {
+    const result = results[index];
+    const partnerKey = SUPPORTED_AUDIO_PARTNERS[index];
+    if (result.status === "fulfilled") {
+      successful.push(result.value);
+      continue;
+    }
+    failedPartners.push(partnerKey);
+    logError("All-partners summary partner query failed", {
+      partner: partnerKey,
+      error: result.reason?.message,
+    });
+  }
+
+  if (!successful.length) {
+    const error = new Error("Unable to fetch summary for any partner.");
+    error.statusCode = 502;
+    throw error;
+  }
+
+  const aggregate = successful.reduce(
+    (acc, item) => {
+      acc.metasea += Number(item.metasea) || 0;
+      acc.partnerDb += Number(item.partnerDb) || 0;
+      acc.deliveredInPeriod += Number(item.deliveredInPeriod) || 0;
+      acc.takenDownInPeriod += Number(item.takenDownInPeriod) || 0;
+      return acc;
+    },
+    { metasea: 0, partnerDb: 0, deliveredInPeriod: 0, takenDownInPeriod: 0 }
+  );
+
+  return {
+    partner: "all",
+    retailerId: null,
+    metasea: aggregate.metasea,
+    partnerDb: aggregate.partnerDb,
+    b2b: aggregate.partnerDb,
+    total: aggregate.partnerDb,
+    deliveredInPeriod: aggregate.deliveredInPeriod,
+    takenDownInPeriod: aggregate.takenDownInPeriod,
+    dateRange: {
+      from: bounds.startDateTime,
+      toExclusive: bounds.endExclusiveDateTime,
+    },
+    partnerBreakdown: successful
+  };
+}
+
 export async function getAudioPartnerSummary({
   partner,
   retailerIdOverride,
@@ -1395,8 +1416,36 @@ export async function getAudioPartnerSummary({
   endDate,
   bypassCache = false,
 }) {
-  const config = resolvePartnerConfiguration(partner, retailerIdOverride);
+  const normalizedPartner = String(partner || "").trim().toLowerCase();
   const bounds = parseDateRangeBounds(startDate, endDate);
+
+  if (normalizedPartner === "all") {
+    const cacheKey = `all|summary|${bounds.startDateTime}|${bounds.endExclusiveDateTime}`;
+    const cacheNamespace = "audio:summary-all";
+
+    if (!bypassCache) {
+      const cached = await getCached(cacheNamespace, cacheKey);
+      if (cached) return cached;
+    }
+
+    if (!bypassCache && inflightAudioSummaryAll.has(cacheKey)) {
+      return inflightAudioSummaryAll.get(cacheKey);
+    }
+
+    const promise = executeAllPartnersSummary({ bounds, bypassCache })
+      .then(async (payload) => {
+        await setCached(cacheNamespace, cacheKey, payload);
+        return payload;
+      })
+      .finally(() => {
+        inflightAudioSummaryAll.delete(cacheKey);
+      });
+
+    inflightAudioSummaryAll.set(cacheKey, promise);
+    return promise;
+  }
+
+  const config = resolvePartnerConfiguration(partner, retailerIdOverride);
   const cacheKey = getSummaryCacheKey(config, bounds);
   const cacheNamespace = "audio:summary";
 
@@ -1465,6 +1514,55 @@ async function executeAudioPartnerPeriodMetrics(config, bounds) {
   };
 }
 
+async function executeAllPartnersPeriodMetrics({ bounds, bypassCache = false } = {}) {
+  logInfo("Fetching period-metrics for all partners", {
+    partnerCount: SUPPORTED_AUDIO_PARTNERS.length,
+    startDate: bounds.startDateTime,
+    endDate: bounds.endExclusiveDateTime,
+  });
+
+  const results = await Promise.allSettled(
+    SUPPORTED_AUDIO_PARTNERS.map((partnerKey) => {
+      const config = resolvePartnerConfiguration(partnerKey);
+      return executeAudioPartnerPeriodMetrics(config, bounds);
+    })
+  );
+
+  const successful = [];
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      successful.push(result.value);
+    }
+  }
+
+  if (!successful.length) {
+    const error = new Error("Unable to fetch period metrics for any partner.");
+    error.statusCode = 502;
+    throw error;
+  }
+
+  const aggregate = successful.reduce(
+    (acc, item) => {
+      acc.deliveredInPeriod += Number(item.deliveredInPeriod) || 0;
+      acc.takenDownInPeriod += Number(item.takenDownInPeriod) || 0;
+      return acc;
+    },
+    { deliveredInPeriod: 0, takenDownInPeriod: 0 }
+  );
+
+  return {
+    partner: "all",
+    retailerId: null,
+    deliveredInPeriod: aggregate.deliveredInPeriod,
+    takenDownInPeriod: aggregate.takenDownInPeriod,
+    dateRange: {
+      from: bounds.startDateTime,
+      toExclusive: bounds.endExclusiveDateTime,
+    },
+    partnerBreakdown: successful
+  };
+}
+
 export async function getAudioPartnerPeriodMetrics({
   partner,
   retailerIdOverride,
@@ -1472,8 +1570,36 @@ export async function getAudioPartnerPeriodMetrics({
   endDate,
   bypassCache = false,
 }) {
-  const config = resolvePartnerConfiguration(partner, retailerIdOverride);
+  const normalizedPartner = String(partner || "").trim().toLowerCase();
   const bounds = parseDateRangeBounds(startDate, endDate);
+
+  if (normalizedPartner === "all") {
+    const cacheKey = `all|period|${bounds.startDateTime}|${bounds.endExclusiveDateTime}`;
+    const cacheNamespace = "audio:period-metrics-all";
+
+    if (!bypassCache) {
+      const cached = await getCached(cacheNamespace, cacheKey);
+      if (cached) return cached;
+    }
+
+    if (!bypassCache && inflightAudioPeriodMetricsAll.has(cacheKey)) {
+      return inflightAudioPeriodMetricsAll.get(cacheKey);
+    }
+
+    const promise = executeAllPartnersPeriodMetrics({ bounds, bypassCache })
+      .then(async (payload) => {
+        await setCached(cacheNamespace, cacheKey, payload);
+        return payload;
+      })
+      .finally(() => {
+        inflightAudioPeriodMetricsAll.delete(cacheKey);
+      });
+
+    inflightAudioPeriodMetricsAll.set(cacheKey, promise);
+    return promise;
+  }
+
+  const config = resolvePartnerConfiguration(partner, retailerIdOverride);
   const cacheKey = `period|${getSummaryCacheKey(config, bounds)}`;
   const cacheNamespace = "audio:period-metrics";
 
@@ -1550,7 +1676,6 @@ async function executeAudioRecentDeliveries({ partner, bounds, limit }) {
     });
   }
 
-  // "No rows found" is a valid outcome; fail only when every partner query failed.
   if (successfulPartnerQueries === 0 && deliveriesPerPartner.length > 0) {
     const error = new Error(
       "Unable to fetch recent deliveries from partner DB. Check API logs for details.",
