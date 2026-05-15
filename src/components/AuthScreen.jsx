@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { User, Lock, Mail, KeyRound, Loader2, ArrowRight } from 'lucide-react';
 import { login, requestAccess, setupPassword } from '../services/metricsApi';
 
 const AuthScreen = ({ onAuthenticated }) => {
@@ -46,8 +47,12 @@ const AuthScreen = ({ onAuthenticated }) => {
   return (
     <div className="auth-screen">
       <div className="auth-card">
-        <h1>DDEX Report Portal</h1>
-        <p className="auth-subtitle">Secure login with admin approval</p>
+        <div className="auth-logo-container">
+          <img src="/hungama_logo.png" alt="Hungama" className="auth-logo" />
+        </div>
+        <div className="auth-header">
+          <h1>DDEX Report Portal</h1>
+        </div>
 
         <div className="auth-tabs">
           <button className={tab === 'login' ? 'active' : ''} onClick={() => setTab('login')}>Login</button>
@@ -55,73 +60,126 @@ const AuthScreen = ({ onAuthenticated }) => {
           <button className={tab === 'setup' ? 'active' : ''} onClick={() => setTab('setup')}>Setup Password</button>
         </div>
 
-        {tab === 'login' && (
-          <form onSubmit={handleLogin} className="auth-form">
-            <label>Username</label>
-            <input
-              value={loginForm.username}
-              onChange={(event) => setLoginForm((prev) => ({ ...prev, username: event.target.value }))}
-              required
-            />
-            <label>Password</label>
-            <input
-              type="password"
-              value={loginForm.password}
-              onChange={(event) => setLoginForm((prev) => ({ ...prev, password: event.target.value }))}
-              required
-            />
-            <button disabled={status.loading} type="submit">{status.loading ? 'Please wait...' : 'Login'}</button>
-          </form>
-        )}
+        <div className="auth-body">
+          {tab === 'login' && (
+            <form onSubmit={handleLogin} className="auth-form">
+              <div className="auth-input-group">
+                <label><User size={14} /> Username</label>
+                <div className="input-wrapper">
+                  <User className="field-icon" size={18} />
+                  <input
+                    placeholder="Enter your username"
+                    value={loginForm.username}
+                    onChange={(event) => setLoginForm((prev) => ({ ...prev, username: event.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="auth-input-group">
+                <label><Lock size={14} /> Password</label>
+                <div className="input-wrapper">
+                  <Lock className="field-icon" size={18} />
+                  <input
+                    type="password"
+                    placeholder="Enter your password"
+                    value={loginForm.password}
+                    onChange={(event) => setLoginForm((prev) => ({ ...prev, password: event.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+              <button disabled={status.loading} type="submit" className="auth-submit-btn">
+                {status.loading ? <Loader2 className="animate-spin" /> : <>Login <ArrowRight size={18} /></>}
+              </button>
+            </form>
+          )}
 
-        {tab === 'request' && (
-          <form onSubmit={handleAccessRequest} className="auth-form">
-            <label>Username</label>
-            <input
-              value={requestForm.username}
-              onChange={(event) => setRequestForm((prev) => ({ ...prev, username: event.target.value }))}
-              required
-            />
-            <label>Email</label>
-            <input
-              type="email"
-              value={requestForm.email}
-              onChange={(event) => setRequestForm((prev) => ({ ...prev, email: event.target.value }))}
-              required
-            />
-            <button disabled={status.loading} type="submit">{status.loading ? 'Please wait...' : 'Submit Request'}</button>
-          </form>
-        )}
+          {tab === 'request' && (
+            <form onSubmit={handleAccessRequest} className="auth-form">
+              <div className="auth-input-group">
+                <label><User size={14} /> Username</label>
+                <div className="input-wrapper">
+                  <User className="field-icon" size={18} />
+                  <input
+                    placeholder="Preferred username"
+                    value={requestForm.username}
+                    onChange={(event) => setRequestForm((prev) => ({ ...prev, username: event.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="auth-input-group">
+                <label><Mail size={14} /> Email</label>
+                <div className="input-wrapper">
+                  <Mail className="field-icon" size={18} />
+                  <input
+                    type="email"
+                    placeholder="Enter your email"
+                    value={requestForm.email}
+                    onChange={(event) => setRequestForm((prev) => ({ ...prev, email: event.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+              <button disabled={status.loading} type="submit" className="auth-submit-btn">
+                {status.loading ? <Loader2 className="animate-spin" /> : <>Request Access <ArrowRight size={18} /></>}
+              </button>
+            </form>
+          )}
 
-        {tab === 'setup' && (
-          <form onSubmit={handlePasswordSetup} className="auth-form">
-            <label>Username</label>
-            <input
-              value={passwordForm.username}
-              onChange={(event) => setPasswordForm((prev) => ({ ...prev, username: event.target.value }))}
-              required
-            />
-            <label>Email</label>
-            <input
-              type="email"
-              value={passwordForm.email}
-              onChange={(event) => setPasswordForm((prev) => ({ ...prev, email: event.target.value }))}
-              required
-            />
-            <label>New Password</label>
-            <input
-              type="password"
-              minLength={6}
-              value={passwordForm.password}
-              onChange={(event) => setPasswordForm((prev) => ({ ...prev, password: event.target.value }))}
-              required
-            />
-            <button disabled={status.loading} type="submit">{status.loading ? 'Please wait...' : 'Set Password'}</button>
-          </form>
-        )}
+          {tab === 'setup' && (
+            <form onSubmit={handlePasswordSetup} className="auth-form">
+              <div className="auth-input-group">
+                <label><User size={14} /> Username</label>
+                <div className="input-wrapper">
+                  <User className="field-icon" size={18} />
+                  <input
+                    placeholder="Enter your username"
+                    value={passwordForm.username}
+                    onChange={(event) => setPasswordForm((prev) => ({ ...prev, username: event.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="auth-input-group">
+                <label><Mail size={14} /> Email</label>
+                <div className="input-wrapper">
+                  <Mail className="field-icon" size={18} />
+                  <input
+                    type="email"
+                    placeholder="Enter your email"
+                    value={passwordForm.email}
+                    onChange={(event) => setPasswordForm((prev) => ({ ...prev, email: event.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="auth-input-group">
+                <label><KeyRound size={14} /> New Password</label>
+                <div className="input-wrapper">
+                  <KeyRound className="field-icon" size={18} />
+                  <input
+                    type="password"
+                    placeholder="Min 6 characters"
+                    minLength={6}
+                    value={passwordForm.password}
+                    onChange={(event) => setPasswordForm((prev) => ({ ...prev, password: event.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+              <button disabled={status.loading} type="submit" className="auth-submit-btn">
+                {status.loading ? <Loader2 className="animate-spin" /> : <>Set Password <ArrowRight size={18} /></>}
+              </button>
+            </form>
+          )}
+        </div>
 
-        {status.message ? <p className="auth-message success">{status.message}</p> : null}
-        {status.error ? <p className="auth-message error">{status.error}</p> : null}
+        {status.message || status.error ? (
+          <div className={`auth-feedback ${status.error ? 'error' : 'success'}`}>
+            {status.error || status.message}
+          </div>
+        ) : null}
       </div>
     </div>
   );
