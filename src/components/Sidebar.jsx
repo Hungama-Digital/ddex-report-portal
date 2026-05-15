@@ -11,7 +11,8 @@ import {
   LogOut,
   Bell,
   Search,
-  X
+  X,
+  User
 } from 'lucide-react';
 
 const Sidebar = ({ activePage, setActivePage, authUser, reportsNotificationCount = 0, onLogout, isOpen, onClose }) => {
@@ -117,11 +118,29 @@ const Sidebar = ({ activePage, setActivePage, authUser, reportsNotificationCount
         </nav>
 
         <div className="sidebar-footer">
-          {authUser ? <p className="sidebar-user">{authUser.username}</p> : null}
-          <button className="logout-btn" onClick={onLogout}>
+          {authUser && (
+            <div className={`user-profile-card ${isCollapsed ? 'collapsed' : ''} mobile-only-profile`}>
+              <div className="user-avatar">
+                <User size={18} />
+              </div>
+              {!isCollapsed && (
+                <div className="user-info">
+                  <span className="user-name">{authUser.username}</span>
+                  <span className="user-role">{authUser.role || 'Member'}</span>
+                </div>
+              )}
+            </div>
+          )}
+          <button className="logout-btn" onClick={onLogout} title="Logout">
             <LogOut size={16} /> {!isCollapsed ? 'Logout' : ''}
           </button>
+
           <p className="sidebar-version">{isCollapsed ? 'v1.3' : 'v1.3.0 DDEX'}</p>
+          {!isCollapsed && (
+            <div className="sidebar-copyright">
+              Copyright©{new Date().getFullYear()} Hungama Digital Media Entertainment Pvt. Ltd. All Right Reserved.
+            </div>
+          )}
         </div>
       </aside>
     </>

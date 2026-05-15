@@ -12,7 +12,7 @@ import AdminPage from './components/AdminPage';
 import SearchPage from './components/SearchPage';
 import ConfirmDialog from './components/ConfirmDialog';
 import NotificationToasts from './components/NotificationToasts';
-import { Sun, Moon, Search, Download, Bell, Menu } from 'lucide-react';
+import { Sun, Moon, Search, Download, Bell, Menu, User } from 'lucide-react';
 import {
   approvePendingUser,
   deleteReportById,
@@ -1184,6 +1184,17 @@ function App() {
             </span>
           </div>
           <div className="header-actions">
+            {authUser && (
+              <div className="header-user-profile">
+                <div className="user-avatar-mini">
+                  <User size={16} />
+                </div>
+                <div className="user-info-mini">
+                  <span className="user-name-mini">{authUser.username}</span>
+                  <span className="user-role-mini">{authUser.role}</span>
+                </div>
+              </div>
+            )}
             <button
               className="header-notify-btn"
               ref={notificationButtonRef}
