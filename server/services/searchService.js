@@ -107,7 +107,7 @@ async function searchByTrackId(trackId) {
       const payload = await getAudioDetailsRows({
         partner,
         type: "live",
-        limit: 100000,
+        limit: 500000,
         bypassCache: false,
       });
 

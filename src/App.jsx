@@ -72,7 +72,7 @@ const EMPTY_AUDIO_PERIOD_METRICS = {
 
 const NOTIFICATION_POLL_INTERVAL_MS = 60000;
 const NOTIFICATION_TOAST_QUIET_PERIOD_MS = 45000;
-const AUDIO_DETAILS_FETCH_LIMIT = 10000;
+const AUDIO_DETAILS_FETCH_LIMIT = 500000;
 
 function useLocalStorage(key, initialValue) {
   const [storedValue, setStoredValue] = useState(() => {

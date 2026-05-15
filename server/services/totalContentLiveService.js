@@ -2337,12 +2337,20 @@ export async function searchAudioContent({ query, type }) {
   return { rows };
 }
 
+const DETAILS_ROWS_WARM_LIMIT = 500000;
+
 export async function warmAllPartnerCaches({ startDate, endDate } = {}) {
   logInfo("Warming caches for all partners", { startDate, endDate });
 
   const livePromise = getAudioPartnerTotalContentLive({ partner: "all" }).catch((error) => {
     logError("Cache warm failed for total-content-live-all", { error: error?.message });
   });
+
+  const liveDetailsPromises = SUPPORTED_AUDIO_PARTNERS.map((partnerKey) =>
+    getAudioDetailsRows({ partner: partnerKey, type: "live", limit: DETAILS_ROWS_WARM_LIMIT }).catch((error) => {
+      logError("Cache warm failed for live details rows", { partner: partnerKey, error: error?.message });
+    }),
+  );
 
   const periodPromises = startDate && endDate
     ? SUPPORTED_AUDIO_PARTNERS.map((partnerKey) =>
@@ -2352,6 +2360,6 @@ export async function warmAllPartnerCaches({ startDate, endDate } = {}) {
       )
     : [];
 
-  await Promise.allSettled([livePromise, ...periodPromises]);
+  await Promise.allSettled([livePromise, ...liveDetailsPromises, ...periodPromises]);
   logInfo("Cache warming complete");
 }
