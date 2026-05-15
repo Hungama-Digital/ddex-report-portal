@@ -18,6 +18,26 @@ const MATCHED_BY_LABELS = {
   trackId: 'Track ID',
 };
 
+const STATUS_LABELS = {
+  1: 'Generation stage 1',
+  2: 'Push failed (reset)',
+  3: 'Generation stage 3',
+  4: 'Generation stage 4',
+  5: 'Generation stage 5',
+  6: 'Generation stage 6',
+  7: 'Generation stage 7',
+  8: 'Fetch started',
+  9: 'Ready to push',
+  10: 'Push in progress',
+  11: 'Partially fetched / ready to push',
+};
+
+function formatStatus(raw) {
+  if (raw === '' || raw === null || raw === undefined) return '-';
+  const num = Number(raw);
+  return STATUS_LABELS[num] ?? raw;
+}
+
 const SEARCH_TYPE_OPTIONS = [
   { value: 'all', label: 'All Identifiers' },
   { value: 'upc', label: 'UPC' },
@@ -163,7 +183,7 @@ const SearchPage = ({ addToast }) => {
                         {item.ddexType || '-'}
                       </span>
                     </td>
-                    <td>{item.status !== '' ? item.status : '-'}</td>
+                    <td>{formatStatus(item.status)}</td>
                     <td className="date-cell">{item.addedOn || '-'}</td>
                     <td className="date-cell">{item.updatedOn || '-'}</td>
                     {searchType === 'all' && (
