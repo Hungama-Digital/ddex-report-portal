@@ -19,17 +19,17 @@ const MATCHED_BY_LABELS = {
 };
 
 const STATUS_LABELS = {
-  1: 'Generation stage 1',
-  2: 'Push failed (reset)',
-  3: 'Generation stage 3',
-  4: 'Generation stage 4',
-  5: 'Generation stage 5',
-  6: 'Generation stage 6',
-  7: 'Generation stage 7',
+  1: 'Successfully delivered',
+  2: 'Audio files not found',
+  3: 'Album art not found',
+  4: 'Sound recording XML done',
+  5: 'Image/artwork XML done',
+  6: 'Release XML done',
+  7: 'All XML done (DealList complete)',
   8: 'Fetch started',
-  9: 'Ready to push',
-  10: 'Push in progress',
-  11: 'Partially fetched / ready to push',
+  9: 'Fetch done / ready to push',
+  11: 'Partial fetch done',
+  12: 'Partial batch pushed successfully',
 };
 
 function formatStatus(raw) {
