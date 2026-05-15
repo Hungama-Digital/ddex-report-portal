@@ -36,11 +36,9 @@ const SummaryCards = ({
   };
 
   const renderLoadingValue = () => (
-    <div className="metric-loading">
-      <span className="metric-loading-dot"></span>
-      <span className="metric-loading-dot"></span>
-      <span className="metric-loading-dot"></span>
-      <span className="metric-loading-text">Loading</span>
+    <div className="metric-skeleton-wrapper">
+      <div className="skeleton" style={{ height: '2.5rem', width: '60%', marginBottom: '0.5rem' }}></div>
+      <div className="skeleton" style={{ height: '0.8rem', width: '40%' }}></div>
     </div>
   );
 
@@ -291,9 +289,8 @@ const SummaryCards = ({
       {cards.map((card) => (
         <div
           key={card.id}
-          className={`summary-card summary-card--${card.kind} ${!isDashboard && activeTab === card.id ? 'active' : ''}`}
-          onClick={() => !isDashboard && setActiveTab(card.id)}
-          style={isDashboard ? { cursor: 'default', transform: 'none', borderColor: 'var(--border-color)' } : {}}
+          className={`summary-card summary-card--${card.kind} ${activeTab === card.id ? 'active' : ''}`}
+          onClick={() => setActiveTab(card.id)}
         >
           <div className="card-header">
             <h3 className="card-title">{card.title}</h3>

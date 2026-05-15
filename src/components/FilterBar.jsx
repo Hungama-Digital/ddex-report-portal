@@ -44,6 +44,7 @@ const FilterBar = ({ selectedPartner, setSelectedPartner, startDate, setStartDat
           id="startDate" 
           className="filter-input"
           value={startDate}
+          max={endDate}
           onChange={(e) => setStartDate(e.target.value)}
         />
       </div>
@@ -58,6 +59,7 @@ const FilterBar = ({ selectedPartner, setSelectedPartner, startDate, setStartDat
           id="endDate" 
           className="filter-input"
           value={endDate}
+          min={startDate}
           onChange={(e) => setEndDate(e.target.value)}
         />
       </div>

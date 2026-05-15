@@ -61,7 +61,7 @@ const ReportsPage = ({
       <div className="reports-header">
         <div>
           <h2>Reports</h2>
-          <p>Note: only latest 7 days reports are available.</p>
+          <p>Note: Reports will only be available for the next 7 days.</p>
         </div>
         <div className="reports-actions">
           <button onClick={onRefresh} disabled={loading}>

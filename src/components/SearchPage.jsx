@@ -59,10 +59,6 @@ const SearchPage = ({ addToast }) => {
               {loading ? <Loader2 className="animate-spin" size={18} /> : 'Search'}
             </button>
           </div>
-          <p className="search-hint">
-            <Info size={14} style={{ marginRight: '4px' }} />
-            Enter a valid identifier to locate content across the repository.
-          </p>
         </form>
       </div>
 

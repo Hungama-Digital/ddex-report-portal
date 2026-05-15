@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   LayoutDashboard,
   Settings,
@@ -11,103 +11,120 @@ import {
   LogOut,
   Bell,
   Search,
+  X
 } from 'lucide-react';
 
-const Sidebar = ({ activePage, setActivePage, authUser, reportsNotificationCount = 0, onLogout }) => {
+const Sidebar = ({ activePage, setActivePage, authUser, reportsNotificationCount = 0, onLogout, isOpen, onClose }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
+  // Close mobile menu on page change
+  const handlePageChange = (page) => {
+    setActivePage(page);
+    if (onClose) onClose();
+  };
+
   return (
-    <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
-      <div className="sidebar-logo-container">
-        {!isCollapsed ? (
-          <img src="/hungama_logo.png" alt="Hungama" className="logo-img" style={{ height: '32px', width: 'auto' }} />
-        ) : (
-          <img src="/triangle_logo.png" alt="Hungama" className="logo-img-collapsed" style={{ height: '32px', width: 'auto' }} />
-        )}
-      </div>
-
-      <button
-        className="collapse-btn"
-        onClick={() => setIsCollapsed(!isCollapsed)}
-        title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
-      >
-        {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-      </button>
-
-      <nav className="sidebar-nav">
-        <button
-          className={`nav-item ${activePage === 'dashboard' ? 'active' : ''}`}
-          onClick={() => setActivePage('dashboard')}
-        >
-          <LayoutDashboard size={20} />
-          <span className="nav-text">Dashboard</span>
-        </button>
+    <>
+      {/* Mobile Overlay */}
+      {isOpen && <div className="sidebar-overlay" onClick={onClose}></div>}
+      
+      <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''} ${isOpen ? 'mobile-open' : ''}`}>
+        <div className="sidebar-logo-container">
+          {!isCollapsed ? (
+            <img src="/hungama_logo.png" alt="Hungama" className="logo-img" />
+          ) : (
+            <img src="/triangle_logo.png" alt="Hungama" className="logo-img-collapsed" />
+          )}
+          {isOpen && (
+            <button className="mobile-close-btn" onClick={onClose}>
+              <X size={20} />
+            </button>
+          )}
+        </div>
 
         <button
-          className={`nav-item ${activePage === 'audio-reports' ? 'active' : ''}`}
-          onClick={() => setActivePage('audio-reports')}
+          className="collapse-btn"
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
         >
-          <Music size={20} />
-          <span className="nav-text">Audio Reports</span>
+          {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>
 
-        <button
-          className={`nav-item ${activePage === 'video-reports' ? 'active' : ''}`}
-          onClick={() => setActivePage('video-reports')}
-        >
-          <Video size={20} />
-          <span className="nav-text">Video Reports</span>
-        </button>
-
-        <button
-          className={`nav-item ${activePage === 'reports' ? 'active' : ''}`}
-          onClick={() => setActivePage('reports')}
-        >
-          <Files size={20} />
-          <span className="nav-text">Reports</span>
-          {reportsNotificationCount > 0 ? (
-            <span className="admin-badge" title="New report/admin notifications">
-              <Bell size={12} /> {reportsNotificationCount}
-            </span>
-          ) : null}
-        </button>
-
-        <button
-          className={`nav-item ${activePage === 'search' ? 'active' : ''}`}
-          onClick={() => setActivePage('search')}
-        >
-          <Search size={20} />
-          <span className="nav-text">Search Contents</span>
-        </button>
-
-
-        {authUser?.role === 'admin' ? (
+        <nav className="sidebar-nav">
           <button
-            className={`nav-item ${activePage === 'admin' ? 'active' : ''}`}
-            onClick={() => setActivePage('admin')}
+            className={`nav-item ${activePage === 'dashboard' ? 'active' : ''}`}
+            onClick={() => handlePageChange('dashboard')}
           >
-            <Shield size={20} />
-            <span className="nav-text">Admin</span>
+            <LayoutDashboard size={20} />
+            <span className="nav-text">Dashboard</span>
           </button>
-        ) : null}
 
-        <button
-          className={`nav-item ${activePage === 'settings' ? 'active' : ''}`}
-          onClick={() => setActivePage('settings')}
-        >
-          <Settings size={20} />
-          <span className="nav-text">Settings</span>
-        </button>
-      </nav>
+          <button
+            className={`nav-item ${activePage === 'audio-reports' ? 'active' : ''}`}
+            onClick={() => handlePageChange('audio-reports')}
+          >
+            <Music size={20} />
+            <span className="nav-text">Audio Reports</span>
+          </button>
 
-      <div className="sidebar-footer">
-        {authUser ? <p className="sidebar-user">{authUser.username}</p> : null}
-        <button className="logout-btn" onClick={onLogout}>
-          <LogOut size={14} /> {!isCollapsed ? 'Logout' : ''}
-        </button>
-        <p className="sidebar-version">{isCollapsed ? 'v1.3' : 'v1.3.0 DDEX'}</p>
-      </div>
-    </aside>
+          <button
+            className={`nav-item ${activePage === 'video-reports' ? 'active' : ''}`}
+            onClick={() => handlePageChange('video-reports')}
+          >
+            <Video size={20} />
+            <span className="nav-text">Video Reports</span>
+          </button>
+
+          <button
+            className={`nav-item ${activePage === 'reports' ? 'active' : ''}`}
+            onClick={() => handlePageChange('reports')}
+          >
+            <Files size={20} />
+            <span className="nav-text">Reports</span>
+            {reportsNotificationCount > 0 ? (
+              <span className="admin-badge" title="New report/admin notifications">
+                <Bell size={12} /> {reportsNotificationCount}
+              </span>
+            ) : null}
+          </button>
+
+          <button
+            className={`nav-item ${activePage === 'search' ? 'active' : ''}`}
+            onClick={() => handlePageChange('search')}
+          >
+            <Search size={20} />
+            <span className="nav-text">Search Contents</span>
+          </button>
+
+
+          {authUser?.role === 'admin' ? (
+            <button
+              className={`nav-item ${activePage === 'admin' ? 'active' : ''}`}
+              onClick={() => handlePageChange('admin')}
+            >
+              <Shield size={20} />
+              <span className="nav-text">Admin</span>
+            </button>
+          ) : null}
+
+          <button
+            className={`nav-item ${activePage === 'settings' ? 'active' : ''}`}
+            onClick={() => handlePageChange('settings')}
+          >
+            <Settings size={20} />
+            <span className="nav-text">Settings</span>
+          </button>
+        </nav>
+
+        <div className="sidebar-footer">
+          {authUser ? <p className="sidebar-user">{authUser.username}</p> : null}
+          <button className="logout-btn" onClick={onLogout}>
+            <LogOut size={16} /> {!isCollapsed ? 'Logout' : ''}
+          </button>
+          <p className="sidebar-version">{isCollapsed ? 'v1.3' : 'v1.3.0 DDEX'}</p>
+        </div>
+      </aside>
+    </>
   );
 };
 

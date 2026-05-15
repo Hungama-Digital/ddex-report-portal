@@ -12,7 +12,7 @@ import AdminPage from './components/AdminPage';
 import SearchPage from './components/SearchPage';
 import ConfirmDialog from './components/ConfirmDialog';
 import NotificationToasts from './components/NotificationToasts';
-import { Sun, Moon, Search, Download, Bell } from 'lucide-react';
+import { Sun, Moon, Search, Download, Bell, Menu } from 'lucide-react';
 import {
   approvePendingUser,
   deleteReportById,
@@ -107,6 +107,12 @@ function App() {
   const [activePage, setActivePage] = useLocalStorage('ddex_activePage', 'dashboard');
   const [dashboardMode, setDashboardMode] = useLocalStorage('ddex_dashboardMode', 'combined');
 
+  useEffect(() => {
+    if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+      setEndDate(startDate);
+    }
+  }, [startDate, endDate, setEndDate]);
+
   const [authUser, setAuthUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
@@ -126,9 +132,12 @@ function App() {
   const notificationsBootstrappedRef = useRef(false);
   const notificationToastReadyAtRef = useRef(0);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const notificationButtonRef = useRef(null);
   const notificationTrayRef = useRef(null);
   const [toasts, setToasts] = useState([]);
+
+  const toggleMobileMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
 
   const [exportActionLoading, setExportActionLoading] = useState(false);
   const [confirmDialogState, setConfirmDialogState] = useState({
@@ -1133,12 +1142,17 @@ function App() {
         activePage={activePage}
         setActivePage={setActivePage}
         authUser={authUser}
-        reportsNotificationCount={reportNotificationCount}
+        reportsNotificationCount={notificationsState.unreadCount}
         onLogout={handleLogout}
+        isOpen={isMobileMenuOpen}
+        onClose={() => setIsMobileMenuOpen(false)}
       />
 
       <main className="main-content">
         <header className="app-header">
+          <button className="mobile-menu-btn" onClick={toggleMobileMenu}>
+            <Menu size={24} />
+          </button>
           <div className="header-text-container">
             <h1 className="app-title-main">
               {activePage === 'dashboard'
@@ -1245,7 +1259,7 @@ function App() {
             <SummaryCards
               dashboardStats={dashboardStats}
               activeTab={activeTab}
-              setActiveTab={() => {}}
+              setActiveTab={setActiveTab}
               isDashboard={true}
               dashboardMode={dashboardMode}
               liveBreakdown={dashboardMode !== 'video' ? liveBreakdown : null}

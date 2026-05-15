@@ -5,7 +5,7 @@ const AdminPage = ({ rows, activeUsers, loading, onApprove, onReject, onRevoke }
   return (
     <div className="admin-page">
       <section className="admin-section">
-        <h2>Admin</h2>
+        <h2>User Access Requests</h2>
         <p>Approval requests from new users</p>
         <div className="table-wrapper">
           <table>
@@ -46,7 +46,6 @@ const AdminPage = ({ rows, activeUsers, loading, onApprove, onReject, onRevoke }
 
       <section className="admin-section">
         <h2>Current Active Users</h2>
-        <p>Name, username, email, encoded password hash and revoke option.</p>
         <div className="table-wrapper">
           <table>
             <thead>

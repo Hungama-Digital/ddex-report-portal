@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { FileQuestion, Search, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { FileQuestion, Search, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import DetailModal from './DetailModal';
 
 const ContentTable = ({
@@ -95,19 +95,25 @@ const ContentTable = ({
       return Array.from({ length: totalPages }, (_, idx) => idx + 1);
     }
 
-    const windowSize = 6;
-    let start = Math.max(1, currentPage - 2);
-    let end = Math.min(totalPages - 1, start + windowSize - 1);
-    start = Math.max(1, end - windowSize + 1);
-
     const pages = [];
-    for (let value = start; value <= end; value += 1) {
-      pages.push(value);
-    }
-    if (end < totalPages - 1) {
+    const windowSize = 3; // numbers around current page
+
+    if (currentPage <= 4) {
+      for (let i = 1; i <= 5; i++) pages.push(i);
       pages.push('ellipsis');
+      pages.push(totalPages);
+    } else if (currentPage >= totalPages - 3) {
+      pages.push(1);
+      pages.push('ellipsis');
+      for (let i = totalPages - 4; i <= totalPages; i++) pages.push(i);
+    } else {
+      pages.push(1);
+      pages.push('ellipsis');
+      for (let i = currentPage - 1; i <= currentPage + 1; i++) pages.push(i);
+      pages.push('ellipsis');
+      pages.push(totalPages);
     }
-    pages.push(totalPages);
+
     return pages;
   }, [currentPage, totalPages]);
 
@@ -275,8 +281,17 @@ const ContentTable = ({
           {totalPages > 1 && (
             <div className="pagination pagination-inline">
               <button
+                className="pagination-jump"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(1)}
+                title="First Page"
+              >
+                <ChevronsLeft size={16} />
+              </button>
+              <button
                 disabled={currentPage === 1}
                 onClick={() => setCurrentPage((page) => page - 1)}
+                title="Previous"
               >
                 <ChevronLeft size={16} />
               </button>
@@ -296,8 +311,17 @@ const ContentTable = ({
               <button
                 disabled={currentPage === totalPages}
                 onClick={() => setCurrentPage((page) => page + 1)}
+                title="Next"
               >
                 <ChevronRight size={16} />
+              </button>
+              <button
+                className="pagination-jump"
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(totalPages)}
+                title="Last Page"
+              >
+                <ChevronsRight size={16} />
               </button>
             </div>
           )}
@@ -387,8 +411,17 @@ const ContentTable = ({
       {totalPages > 1 && (
         <div className="pagination pagination-bottom-right">
           <button 
+            className="pagination-jump"
+            disabled={currentPage === 1} 
+            onClick={() => setCurrentPage(1)}
+            title="First Page"
+          >
+            <ChevronsLeft size={20} />
+          </button>
+          <button 
             disabled={currentPage === 1} 
             onClick={() => setCurrentPage(p => p - 1)}
+            title="Previous"
           >
             <ChevronLeft size={20} />
           </button>
@@ -408,8 +441,17 @@ const ContentTable = ({
           <button 
             disabled={currentPage === totalPages} 
             onClick={() => setCurrentPage(p => p + 1)}
+            title="Next"
           >
             <ChevronRight size={20} />
+          </button>
+          <button 
+            className="pagination-jump"
+            disabled={currentPage === totalPages} 
+            onClick={() => setCurrentPage(totalPages)}
+            title="Last Page"
+          >
+            <ChevronsRight size={20} />
           </button>
         </div>
       )}
