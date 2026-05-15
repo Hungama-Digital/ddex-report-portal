@@ -789,6 +789,32 @@ tr:hover td {
   letter-spacing: -0.02em;
 }
 
+.metric-value-compound {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.metric-value-compound .metric-value-large {
+  display: inline;
+}
+
+.metric-unit-label {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+  margin-left: 0.2rem;
+  text-transform: uppercase;
+}
+
+.metric-compound-divider {
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
 .metric-loading {
   display: inline-flex;
   align-items: center;

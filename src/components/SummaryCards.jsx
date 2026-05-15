@@ -84,10 +84,23 @@ const SummaryCards = ({
     if (metricsLoading) {
       return renderLoadingValue();
     }
-    const displayValue = liveBreakdown?.isLiveData
-      ? livePartnerDbCount
-      : totalLiveCount;
-    return <span className="metric-value-large">{formatCount(displayValue)}</span>;
+    const trackCount = liveBreakdown?.isLiveData ? livePartnerDbCount : totalLiveCount;
+    const albumCount = liveBreakdown?.albumCount;
+
+    if (albumCount !== null && albumCount !== undefined) {
+      return (
+        <div className="metric-value-compound">
+          <span className="metric-value-large">
+            {formatCount(albumCount)}<span className="metric-unit-label">Albums</span>
+          </span>
+          <span className="metric-compound-divider">/</span>
+          <span className="metric-value-large">
+            {formatCount(trackCount)}<span className="metric-unit-label">Tracks</span>
+          </span>
+        </div>
+      );
+    }
+    return <span className="metric-value-large">{formatCount(trackCount)}</span>;
   };
 
   const renderValue = (key) => {

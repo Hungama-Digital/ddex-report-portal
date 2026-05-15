@@ -439,6 +439,7 @@ function App() {
         isLiveData: true,
         metasea: audioSummary.metasea,
         partnerDb: audioSummary.partnerDb,
+        albumCount: audioDetailsRowsState.status === 'success' ? audioDetailsRowsState.rows.length : null,
       }
     : null;
 
