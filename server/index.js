@@ -462,16 +462,45 @@ app.get('/api/audio/partners/:partner/recent-deliveries', requireAuth, async (re
 
 app.get('/api/audio/partners/:partner/details', requireAuth, async (req, res, next) => {
   try {
+    const partner = req.params.partner;
+    const bypassCache =
+      req.query.refresh === '1' ||
+      req.query.noCache === '1' ||
+      req.query.nocache === '1';
+
+    if (partner === 'all') {
+      const results = await Promise.allSettled(
+        SUPPORTED_AUDIO_PARTNERS.map((p) =>
+          getAudioDetailsRows({
+            partner: p,
+            type: req.query.type,
+            startDate: req.query.startDate,
+            endDate: req.query.endDate,
+            limit: req.query.limit,
+            bypassCache,
+          }),
+        ),
+      );
+
+      const rows = results.flatMap((r, i) => {
+        if (r.status === 'fulfilled') return r.value.rows;
+        logError('All-partner details fetch failed for partner', {
+          partner: SUPPORTED_AUDIO_PARTNERS[i],
+          error: r.reason?.message,
+        });
+        return [];
+      });
+
+      return res.json({ partner: 'all', type: req.query.type, rows, total: rows.length });
+    }
+
     const details = await getAudioDetailsRows({
-      partner: req.params.partner,
+      partner,
       type: req.query.type,
       startDate: req.query.startDate,
       endDate: req.query.endDate,
       limit: req.query.limit,
-      bypassCache:
-        req.query.refresh === '1' ||
-        req.query.noCache === '1' ||
-        req.query.nocache === '1',
+      bypassCache,
     });
 
     res.json(details);

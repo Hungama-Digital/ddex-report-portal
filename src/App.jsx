@@ -737,16 +737,6 @@ function App() {
       return;
     }
 
-    if (selectedPartner === 'all') {
-      setAudioDetailsRowsState({
-        queryKey: currentAudioDetailsKey,
-        status: 'success',
-        error: null,
-        rows: [],
-      });
-      return;
-    }
-
     const detailTypeByTab = {
       totalLive: 'live',
       deliveredThisMonth: 'delivered',
