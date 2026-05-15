@@ -12,13 +12,12 @@ import AdminPage from './components/AdminPage';
 import SearchPage from './components/SearchPage';
 import ConfirmDialog from './components/ConfirmDialog';
 import NotificationToasts from './components/NotificationToasts';
-import QueryDebugPanel from './components/QueryDebugPanel';
 import { Sun, Moon, Search, Download, Bell } from 'lucide-react';
 import {
   approvePendingUser,
   deleteReportById,
   fetchAudioDetailsRows,
-  fetchAudioPartnerDebugQueries,
+  fetchAudioPartnerPeriodMetrics,
   fetchAudioPartnerSummary,
   fetchAudioPartnerTotalContentLive,
   fetchAudioRecentDeliveries,
@@ -121,8 +120,6 @@ function App() {
   const [jobsState, setJobsState] = useState({ loading: false, rows: [] });
   const [approvalsState, setApprovalsState] = useState({ loading: false, rows: [] });
   const [adminUsersState, setAdminUsersState] = useState({ loading: false, rows: [] });
-  const [debugQueriesState, setDebugQueriesState] = useState({ loading: false, error: null, payload: null });
-  const [debugRefreshNonce, setDebugRefreshNonce] = useState(0);
 
   const [notificationsState, setNotificationsState] = useState({ unreadCount: 0, rows: [] });
   const seenNotificationRef = useRef(new Set());
@@ -351,9 +348,6 @@ function App() {
   const shouldLoadAudioMetrics =
     (activePage === 'audio-reports' || (activePage === 'dashboard' && dashboardMode !== 'video')) &&
     isAudioSelectionSupported;
-  const shouldShowQueryDebugPanel =
-    isAudioSelectionSupported &&
-    (activePage === 'dashboard' || activePage === 'audio-reports');
   const hasValidDateRange =
     isValidDateInput(startDate) &&
     isValidDateInput(endDate) &&
@@ -441,33 +435,9 @@ function App() {
     }));
 
     const livePromise = isAllAudioPartnersSelected
-      ? Promise.allSettled(
-          audioPartners.map((partner) =>
-            fetchAudioPartnerTotalContentLive({
-              partner: partner.id,
-              signal: abortController.signal,
-            }),
-          ),
-        ).then((responses) => {
-          const summaries = responses
-            .filter((item) => item.status === 'fulfilled')
-            .map((item) => item.value)
-            .filter(Boolean);
-          if (summaries.length === 0) {
-            throw new Error('Unable to fetch live counts for partners.');
-          }
-          return summaries.reduce(
-            (acc, item) => ({
-              metasea: acc.metasea + (Number(item.metasea) || 0),
-              partnerDb: acc.partnerDb + (Number(item.partnerDb) || 0),
-              total: acc.total + (Number(item.total) || 0),
-            }),
-            {
-              metasea: 0,
-              partnerDb: 0,
-              total: 0,
-            },
-          );
+      ? fetchAudioPartnerTotalContentLive({
+          partner: 'all',
+          signal: abortController.signal,
         })
       : fetchAudioPartnerTotalContentLive({
           partner: selectedPartner,
@@ -510,6 +480,8 @@ function App() {
     };
   }, [currentAudioLiveKey, selectedPartner, isAllAudioPartnersSelected, authUser]);
 
+  // Phase 2: Delivered + TakeDown — fires only after Phase 1 (Total Live) is shown.
+  // All partner queries run in parallel via the dedicated /period-metrics endpoint.
   useEffect(() => {
     if (!authUser || !currentAudioPeriodKey || !isAudioSummaryReady) {
       return;
@@ -525,32 +497,32 @@ function App() {
     });
 
     const periodPromise = isAllAudioPartnersSelected
-      ? Promise.allSettled(
-          audioPartners.map((partner) =>
-            fetchAudioPartnerSummary({
-              partner: partner.id,
-              startDate,
-              endDate,
-              signal: abortController.signal,
-            }),
-          ),
-        ).then((responses) => {
-          const summaries = responses
-            .filter((item) => item.status === 'fulfilled')
-            .map((item) => item.value)
-            .filter(Boolean);
-          if (summaries.length === 0) {
-            throw new Error('Unable to fetch period metrics for partners.');
+      ? (async () => {
+          const results = await Promise.all(
+            audioPartners.map((partner) =>
+              fetchAudioPartnerPeriodMetrics({
+                partner: partner.id,
+                startDate,
+                endDate,
+                signal: abortController.signal,
+              }).catch(() => null),
+            ),
+          );
+
+          const successCount = results.filter(Boolean).length;
+          if (!successCount) {
+            throw new Error('Unable to fetch period metrics for any partner.');
           }
-          return summaries.reduce(
-            (acc, item) => ({
-              deliveredInPeriod: acc.deliveredInPeriod + (Number(item.deliveredInPeriod) || 0),
-              takenDownInPeriod: acc.takenDownInPeriod + (Number(item.takenDownInPeriod) || 0),
+
+          return results.reduce(
+            (acc, r) => ({
+              deliveredInPeriod: acc.deliveredInPeriod + (Number(r?.deliveredInPeriod) || 0),
+              takenDownInPeriod: acc.takenDownInPeriod + (Number(r?.takenDownInPeriod) || 0),
             }),
             { deliveredInPeriod: 0, takenDownInPeriod: 0 },
           );
-        })
-      : fetchAudioPartnerSummary({
+        })()
+      : fetchAudioPartnerPeriodMetrics({
           partner: selectedPartner,
           startDate,
           endDate,
@@ -640,6 +612,17 @@ function App() {
       return;
     }
 
+    const allPartnerPeriodReady =
+      selectedPartner !== 'all' ||
+      !hasValidDateRange ||
+      (Boolean(currentAudioPeriodKey) &&
+        audioPeriodMetrics.queryKey === currentAudioPeriodKey &&
+        audioPeriodMetrics.status === 'success');
+
+    if (!allPartnerPeriodReady) {
+      return;
+    }
+
     if (!hasValidDateRange) {
       setRecentDeliveriesState({
         queryKey: currentRecentDeliveriesKey,
@@ -694,51 +677,20 @@ function App() {
     return () => {
       abortController.abort();
     };
-  }, [currentRecentDeliveriesKey, recentDeliveriesPartner, startDate, endDate, hasValidDateRange, isAudioSummaryReady, authUser]);
-
-  useEffect(() => {
-    if (!authUser || !shouldShowQueryDebugPanel) {
-      return;
-    }
-
-    const abortController = new AbortController();
-    setDebugQueriesState((prev) => ({ ...prev, loading: true, error: null }));
-
-    fetchAudioPartnerDebugQueries({
-      partner: selectedPartner,
-      startDate: hasValidDateRange ? startDate : undefined,
-      endDate: hasValidDateRange ? endDate : undefined,
-      signal: abortController.signal,
-    })
-      .then((payload) => {
-        if (abortController.signal.aborted) {
-          return;
-        }
-        setDebugQueriesState({ loading: false, error: null, payload });
-      })
-      .catch((error) => {
-        if (abortController.signal.aborted || error?.name === 'AbortError') {
-          return;
-        }
-        setDebugQueriesState({
-          loading: false,
-          error: error?.message || 'Unable to load debug queries.',
-          payload: null,
-        });
-      });
-
-    return () => {
-      abortController.abort();
-    };
   }, [
-    authUser,
-    shouldShowQueryDebugPanel,
-    selectedPartner,
+    currentRecentDeliveriesKey,
+    recentDeliveriesPartner,
     startDate,
     endDate,
     hasValidDateRange,
-    debugRefreshNonce,
+    isAudioSummaryReady,
+    selectedPartner,
+    currentAudioPeriodKey,
+    audioPeriodMetrics.queryKey,
+    audioPeriodMetrics.status,
+    authUser,
   ]);
+
 
   const currentAudioDetailsKey = useMemo(() => {
     if (activePage !== 'audio-reports' || !isAudioSelectionSupported) {
@@ -753,6 +705,16 @@ function App() {
 
   useEffect(() => {
     if (!authUser || !currentAudioDetailsKey || !isAudioSummaryReady) {
+      return;
+    }
+
+    if (selectedPartner === 'all') {
+      setAudioDetailsRowsState({
+        queryKey: currentAudioDetailsKey,
+        status: 'success',
+        error: null,
+        rows: [],
+      });
       return;
     }
 
@@ -1092,14 +1054,6 @@ function App() {
     }
   };
 
-  const handleCopyQueryText = async (queryText) => {
-    try {
-      await navigator.clipboard.writeText(String(queryText || ''));
-      addToast({ title: 'Query Debug', message: 'Query copied to clipboard.', type: 'success' });
-    } catch (_error) {
-      addToast({ title: 'Query Debug', message: 'Unable to copy query.', type: 'error' });
-    }
-  };
 
   const reportNotificationCount = useMemo(
     () =>
@@ -1370,15 +1324,6 @@ function App() {
               </div>
             </div>
 
-            {shouldShowQueryDebugPanel ? (
-              <QueryDebugPanel
-                loading={debugQueriesState.loading}
-                error={debugQueriesState.error}
-                payload={debugQueriesState.payload}
-                onRefresh={() => setDebugRefreshNonce((value) => value + 1)}
-                onCopy={handleCopyQueryText}
-              />
-            ) : null}
           </div>
         ) : activePage === 'audio-reports' || activePage === 'video-reports' ? (
           <div className="dashboard-content">
@@ -1429,15 +1374,6 @@ function App() {
               reportFileNamePrefix={reportPartnerLabel}
             />
 
-            {shouldShowQueryDebugPanel ? (
-              <QueryDebugPanel
-                loading={debugQueriesState.loading}
-                error={debugQueriesState.error}
-                payload={debugQueriesState.payload}
-                onRefresh={() => setDebugRefreshNonce((value) => value + 1)}
-                onCopy={handleCopyQueryText}
-              />
-            ) : null}
           </div>
         ) : activePage === 'reports' ? (
           <ReportsPage

@@ -160,7 +160,7 @@ export async function fetchAudioPartnerTotalContentLive({
   retailerId,
   signal,
 }) {
-  if (!partner || partner === 'all') {
+  if (!partner) {
     return null;
   }
 
@@ -180,6 +180,42 @@ export async function fetchAudioPartnerTotalContentLive({
     metasea: Number(payload.metasea) || 0,
     partnerDb: Number(payload.partnerDb ?? payload.b2b) || 0,
     total: Number(payload.total) || 0,
+    partnerBreakdown: Array.isArray(payload.partnerBreakdown) ? payload.partnerBreakdown : [],
+  };
+}
+
+export async function fetchAudioPartnerPeriodMetrics({
+  partner,
+  startDate,
+  endDate,
+  retailerId,
+  signal,
+}) {
+  if (!partner || partner === 'all') {
+    return null;
+  }
+
+  ensureDateInput(startDate, 'startDate');
+  ensureDateInput(endDate, 'endDate');
+
+  const params = new URLSearchParams();
+  params.set('startDate', startDate);
+  params.set('endDate', endDate);
+  if (retailerId !== undefined && retailerId !== null && retailerId !== '') {
+    params.set('retailerId', retailerId);
+  }
+
+  const payload = await apiFetch(
+    `/api/audio/partners/${encodeURIComponent(partner)}/period-metrics?${params.toString()}`,
+    { signal },
+  );
+
+  return {
+    partner: payload.partner,
+    retailerId: payload.retailerId,
+    deliveredInPeriod: Number(payload.deliveredInPeriod) || 0,
+    takenDownInPeriod: Number(payload.takenDownInPeriod) || 0,
+    dateRange: payload.dateRange || null,
   };
 }
 

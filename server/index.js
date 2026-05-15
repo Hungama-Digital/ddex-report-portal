@@ -17,6 +17,8 @@ import {
   getAudioPartnerSummary,
   getAudioPartnerTotalContentLive,
   searchAudioContent,
+  getAudioPartnerPeriodMetrics,
+  warmAllPartnerCaches,
 } from './services/totalContentLiveService.js';
 import {
   approveUser,
@@ -478,6 +480,25 @@ app.get('/api/audio/partners/:partner/details', requireAuth, async (req, res, ne
   }
 });
 
+app.get('/api/audio/partners/:partner/period-metrics', requireAuth, async (req, res, next) => {
+  try {
+    const metrics = await getAudioPartnerPeriodMetrics({
+      partner: req.params.partner,
+      retailerIdOverride: req.query.retailerId,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+      bypassCache:
+        req.query.refresh === '1' ||
+        req.query.noCache === '1' ||
+        req.query.nocache === '1',
+    });
+
+    res.json(metrics);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/audio/partners/:partner/debug-queries', requireAuth, async (req, res, next) => {
   try {
     const payload = getAudioPartnerDebugQueries({
@@ -534,6 +555,18 @@ const server = app.listen(API_PORT, async () => {
   await getStoreDb();
   logInfo(`API server running on http://127.0.0.1:${API_PORT}`, {
     debug: API_DEBUG,
+  });
+
+  // Phase 1 cache warm: total-live + current-month period metrics pre-populated
+  // so the first user request is served instantly from cache.
+  const today = new Date();
+  const firstOfMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+  const warmStartDate = firstOfMonth.toISOString().slice(0, 10);
+  const warmEndDate = today.toISOString().slice(0, 10);
+  setImmediate(() => {
+    warmAllPartnerCaches({ startDate: warmStartDate, endDate: warmEndDate }).catch((err) => {
+      logError('Background cache warming failed', { error: err?.message });
+    });
   });
 });
 
