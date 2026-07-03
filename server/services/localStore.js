@@ -126,12 +126,49 @@ async function setupSchema(db) {
       FOREIGN KEY (result_report_id) REFERENCES reports(id) ON DELETE SET NULL
     );
 
+    CREATE TABLE IF NOT EXISTS user_activities (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      action TEXT NOT NULL,
+      details TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS roles (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      permissions_json TEXT NOT NULL DEFAULT '[]',
+      is_system INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS permissions (
+      id TEXT PRIMARY KEY,
+      module TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      created_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
     CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(recipient_user_id, read_at);
     CREATE INDEX IF NOT EXISTS idx_reports_created_at ON reports(created_at);
+    CREATE INDEX IF NOT EXISTS idx_user_activities_user_id ON user_activities(user_id);
   `);
 
+  try {
+    await db.exec(`ALTER TABLE users ADD COLUMN last_login TEXT;`);
+  } catch (err) {
+    // Column already exists
+  }
+
   await seedAdmin(db);
+  await seedRolesAndPermissions(db);
 }
 
 export async function getStoreDb() {
@@ -223,8 +260,9 @@ export async function createAccessRequest({ username, email }) {
   );
 
   const insertedId = result.lastID;
+  await logUserActivity(insertedId, 'Account request submitted');
 
-  const admins = await db.all(`SELECT id FROM users WHERE role = 'admin' AND status = 'approved'`);
+  const admins = await db.all(`SELECT id FROM users WHERE role IN ('admin', 'super-admin') AND status = 'approved'`);
   for (const admin of admins) {
     await db.run(
       `INSERT INTO notifications (recipient_user_id, type, message, payload_json, created_at)
@@ -242,26 +280,25 @@ export async function createAccessRequest({ username, email }) {
   return { id: insertedId, alreadyPending: false };
 }
 
-export async function setupUserPassword({ username, email, password }) {
+export async function setupUserPassword({ email, password }) {
   const db = await getStoreDb();
-  const normalizedUsername = String(username || '').trim();
   const normalizedEmail = String(email || '').trim().toLowerCase();
 
-  if (!normalizedUsername || !normalizedEmail || !password) {
-    const error = new Error('username, email and password are required.');
+  if (!normalizedEmail || !password) {
+    const error = new Error('email and password are required.');
     error.statusCode = 400;
     throw error;
   }
 
   const user = await db.get(
     `SELECT id, status, password_hash FROM users
-     WHERE LOWER(username) = LOWER(?) AND LOWER(email) = LOWER(?)
+     WHERE LOWER(email) = LOWER(?)
      LIMIT 1`,
-    [normalizedUsername, normalizedEmail],
+    [normalizedEmail],
   );
 
   if (!user || user.status !== 'approved') {
-    const error = new Error('User is not approved yet.');
+    const error = new Error('User is not approved yet or not found.');
     error.statusCode = 403;
     throw error;
   }
@@ -279,16 +316,17 @@ export async function setupUserPassword({ username, email, password }) {
      WHERE id = ?`,
     [passwordHash, nowIso(), user.id],
   );
+  await logUserActivity(user.id, 'Set up password credentials');
 
   return { ok: true };
 }
 
-export async function loginUser({ username, password }) {
+export async function loginUser({ email, password }) {
   const db = await getStoreDb();
-  const normalizedUsername = String(username || '').trim();
+  const normalizedEmail = String(email || '').trim().toLowerCase();
 
-  if (!normalizedUsername || !password) {
-    const error = new Error('username and password are required.');
+  if (!normalizedEmail || !password) {
+    const error = new Error('email and password are required.');
     error.statusCode = 400;
     throw error;
   }
@@ -296,13 +334,13 @@ export async function loginUser({ username, password }) {
   const user = await db.get(
     `SELECT id, username, email, role, status, password_hash
      FROM users
-     WHERE LOWER(username) = LOWER(?)
+     WHERE LOWER(email) = LOWER(?)
      LIMIT 1`,
-    [normalizedUsername],
+    [normalizedEmail],
   );
 
   if (!user) {
-    const error = new Error('Invalid username or password.');
+    const error = new Error('Invalid email or password.');
     error.statusCode = 401;
     throw error;
   }
@@ -321,12 +359,18 @@ export async function loginUser({ username, password }) {
   }
 
   if (!verifyPassword(password, user.password_hash)) {
-    const error = new Error('Invalid username or password.');
+    const error = new Error('Invalid email or password.');
     error.statusCode = 401;
     throw error;
   }
 
   const token = await createSession(user.id);
+  const now = nowIso();
+  await db.run(
+    `UPDATE users SET last_login = ?, updated_at = ? WHERE id = ?`,
+    [now, now, user.id],
+  );
+  await logUserActivity(user.id, 'Logged into Delivery Portal');
 
   return {
     token,
@@ -349,7 +393,7 @@ export async function listPendingApprovals() {
   );
 }
 
-export async function approveUser(userId, adminUserId) {
+export async function approveUser(userId, adminUserId, role) {
   const db = await getStoreDb();
   const id = Number.parseInt(String(userId), 10);
   if (!Number.isInteger(id) || id <= 0) {
@@ -365,12 +409,15 @@ export async function approveUser(userId, adminUserId) {
     throw error;
   }
 
+  const assignedRole = role || 'user';
+
   await db.run(
     `UPDATE users
-     SET status = 'approved', approved_at = ?, updated_at = ?
+     SET status = 'approved', role = ?, approved_at = ?, updated_at = ?
      WHERE id = ?`,
-    [nowIso(), nowIso(), id],
+    [assignedRole, nowIso(), nowIso(), id],
   );
+  await logUserActivity(id, `Account approved and assigned role: ${assignedRole}`);
 
   const admins = await db.all(`SELECT id FROM users WHERE role = 'admin' AND status = 'approved'`);
   for (const admin of admins) {
@@ -380,14 +427,14 @@ export async function approveUser(userId, adminUserId) {
       [
         admin.id,
         'approval_granted',
-        `User approved: ${user.username} (${user.email})`,
-        JSON.stringify({ userId: user.id, approvedBy: adminUserId }),
+        `User approved: ${user.username} (${user.email}) as ${assignedRole}`,
+        JSON.stringify({ userId: user.id, approvedBy: adminUserId, role: assignedRole }),
         nowIso(),
       ],
     );
   }
 
-  return { ok: true, user };
+  return { ok: true, user: { ...user, role: assignedRole } };
 }
 
 export async function rejectUser(userId, adminUserId) {
@@ -412,8 +459,9 @@ export async function rejectUser(userId, adminUserId) {
      WHERE id = ?`,
     [nowIso(), id],
   );
+  await logUserActivity(id, 'Account request rejected by Administrator');
 
-  const admins = await db.all(`SELECT id FROM users WHERE role = 'admin' AND status = 'approved'`);
+  const admins = await db.all(`SELECT id FROM users WHERE role IN ('admin', 'super-admin') AND status = 'approved'`);
   for (const admin of admins) {
     await db.run(
       `INSERT INTO notifications (recipient_user_id, type, message, payload_json, created_at)
@@ -631,7 +679,7 @@ export async function revokeUserAccess(userId) {
     throw error;
   }
 
-  if (user.role === 'admin') {
+  if (user.role === 'admin' || user.role === 'super-admin') {
     const error = new Error('Admin access cannot be revoked from this screen.');
     error.statusCode = 400;
     throw error;
@@ -644,6 +692,268 @@ export async function revokeUserAccess(userId) {
     [nowIso(), normalizedId],
   );
   await db.run(`DELETE FROM sessions WHERE user_id = ?`, [normalizedId]);
+  await logUserActivity(normalizedId, 'Account status set to deactivated (revoked) by Administrator');
 
   return { ok: true, user };
+}
+
+export async function createUserInDb({ username, email, role, status }) {
+  const db = await getStoreDb();
+  const normalizedUsername = String(username || '').trim();
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const now = nowIso();
+  const dbStatus = status === 'inactive' ? 'revoked' : 'approved';
+  
+  const result = await db.run(
+    `INSERT INTO users (username, email, role, status, created_at, approved_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [normalizedUsername, normalizedEmail, role || 'user', dbStatus, now, now],
+  );
+  await logUserActivity(result.lastID, 'Account created by Administrator');
+  return { id: result.lastID, username: normalizedUsername, email: normalizedEmail, role, status };
+}
+
+export async function updateUserInDb(id, { username, email, role, status }) {
+  const db = await getStoreDb();
+  const normalizedUsername = String(username || '').trim();
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const dbStatus = status === 'inactive' ? 'revoked' : 'approved';
+
+  await db.run(
+    `UPDATE users
+     SET username = ?, email = ?, role = ?, status = ?, updated_at = ?
+     WHERE id = ?`,
+    [normalizedUsername, normalizedEmail, role, dbStatus, nowIso(), id],
+  );
+  await logUserActivity(id, 'Account details updated by Administrator');
+  return { id, username: normalizedUsername, email: normalizedEmail, role, status };
+}
+
+export async function deleteUserInDb(id) {
+  const db = await getStoreDb();
+  await db.run(`DELETE FROM users WHERE id = ?`, [id]);
+  await db.run(`DELETE FROM sessions WHERE user_id = ?`, [id]);
+  return { id };
+}
+
+export async function resetUserPasswordInDb(id, newPassword) {
+  const db = await getStoreDb();
+  const passwordHash = hashPassword(newPassword);
+  await db.run(
+    `UPDATE users
+     SET password_hash = ?, updated_at = ?
+     WHERE id = ?`,
+    [passwordHash, nowIso(), id],
+  );
+  await logUserActivity(id, 'Password reset by Administrator');
+  return { id };
+}
+
+export async function listAllUsers() {
+  const db = await getStoreDb();
+  return db.all(
+    `SELECT id, username, email, password_hash, role, status, created_at, approved_at, updated_at, last_login
+     FROM users
+     ORDER BY created_at DESC`,
+  );
+}
+
+export async function logUserActivity(userId, action, details = null) {
+  const db = await getStoreDb();
+  await db.run(
+    `INSERT INTO user_activities (user_id, action, details, created_at)
+     VALUES (?, ?, ?, ?)`,
+    [userId, action, details, nowIso()],
+  );
+}
+
+export async function getUserActivities(userId) {
+  const db = await getStoreDb();
+  return db.all(
+    `SELECT id, action, details, created_at
+     FROM user_activities
+     WHERE user_id = ?
+     ORDER BY created_at DESC
+     LIMIT 50`,
+    [userId],
+  );
+}
+
+async function seedRolesAndPermissions(db) {
+  const SYSTEM_PERMISSIONS = [
+    { id: 'dashboard.view', module: 'Dashboard', name: 'View Dashboard', description: 'View main metrics and charts' },
+    { id: 'audio-reports.view', module: 'Audio Reports', name: 'View Audio Reports', description: 'View and query audio metrics' },
+    { id: 'video-reports.view', module: 'Video Reports', name: 'View Video Reports', description: 'View and query video metrics' },
+    { id: 'reports.view', module: 'Reports', name: 'View Reports', description: 'Access report generation page' },
+    { id: 'search.view', module: 'Search Contents', name: 'Search Contents', description: 'Access DDEX album and track search' },
+    { id: 'users.view', module: 'Users', name: 'View Users', description: 'List and view user profiles' },
+    { id: 'users.create', module: 'Users', name: 'Create Users', description: 'Add new user accounts' },
+    { id: 'users.edit', module: 'Users', name: 'Edit Users', description: 'Modify existing user details' },
+    { id: 'users.delete', module: 'Users', name: 'Delete Users', description: 'Delete user accounts' },
+    { id: 'roles.view', module: 'Roles', name: 'View Roles', description: 'View system access roles' },
+    { id: 'roles.create', module: 'Roles', name: 'Create Roles', description: 'Create new access roles' },
+    { id: 'roles.edit', module: 'Roles', name: 'Edit Roles', description: 'Modify role permission matrix' },
+    { id: 'roles.delete', module: 'Roles', name: 'Delete Roles', description: 'Remove custom roles' },
+    { id: 'settings.view', module: 'Settings', name: 'View Settings', description: 'Access system preferences page' },
+    { id: 'settings.edit', module: 'Settings', name: 'Edit Settings', description: 'Modify system theme and options' },
+  ];
+
+  const now = new Date().toISOString();
+
+  for (const perm of SYSTEM_PERMISSIONS) {
+    const existing = await db.get(`SELECT id FROM permissions WHERE id = ? LIMIT 1`, [perm.id]);
+    if (!existing) {
+      await db.run(
+        `INSERT INTO permissions (id, module, name, description, created_at) VALUES (?, ?, ?, ?, ?)`,
+        [perm.id, perm.module, perm.name, perm.description, now]
+      );
+    }
+  }
+
+  const DEFAULT_ROLES = [
+    {
+      id: 'super-admin',
+      name: 'Super Admin',
+      slug: 'super-admin',
+      description: 'Full access to all modules and configurations.',
+      status: 'active',
+      permissions: SYSTEM_PERMISSIONS.map(p => p.id),
+      isSystem: true
+    },
+    {
+      id: 'content-ingestion',
+      name: 'Content Ingestion Team',
+      slug: 'content-ingestion',
+      description: 'Responsible for monitoring metrics, viewing files, and reports.',
+      status: 'active',
+      permissions: ['dashboard.view', 'users.view', 'reports.view'],
+      isSystem: true
+    },
+    {
+      id: 'business-team',
+      name: 'Business Team',
+      slug: 'business-team',
+      description: 'Access to reports page and dashboard stats.',
+      status: 'active',
+      permissions: ['dashboard.view', 'reports.view'],
+      isSystem: true
+    }
+  ];
+
+  for (const role of DEFAULT_ROLES) {
+    const existing = await db.get(`SELECT id FROM roles WHERE id = ? LIMIT 1`, [role.id]);
+    if (!existing) {
+      await db.run(
+        `INSERT INTO roles (id, name, slug, description, status, permissions_json, is_system, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          role.id,
+          role.name,
+          role.slug,
+          role.description,
+          role.status,
+          JSON.stringify(role.permissions),
+          role.isSystem ? 1 : 0,
+          now
+        ]
+      );
+    }
+  }
+}
+
+export async function listRoles() {
+  const db = await getStoreDb();
+  const rows = await db.all(`SELECT * FROM roles ORDER BY created_at ASC`);
+  return rows.map(r => ({
+    id: r.id,
+    name: r.name,
+    slug: r.slug,
+    description: r.description,
+    status: r.status,
+    permissions: JSON.parse(r.permissions_json || '[]'),
+    isSystem: Boolean(r.is_system)
+  }));
+}
+
+export async function createRoleInDb({ name, description, status, permissions }) {
+  const db = await getStoreDb();
+  const id = name.toLowerCase().replace(/\s+/g, '-');
+  const slug = id;
+  const now = new Date().toISOString();
+  await db.run(
+    `INSERT INTO roles (id, name, slug, description, status, permissions_json, is_system, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      name,
+      slug,
+      description || '',
+      status || 'active',
+      JSON.stringify(permissions || []),
+      0,
+      now
+    ]
+  );
+  return {
+    id,
+    name,
+    slug,
+    description,
+    status,
+    permissions: permissions || [],
+    isSystem: false
+  };
+}
+
+export async function updateRoleInDb(roleId, { name, slug, description, status, permissions }) {
+  const db = await getStoreDb();
+  await db.run(
+    `UPDATE roles
+     SET name = ?, slug = ?, description = ?, status = ?, permissions_json = ?, updated_at = ?
+     WHERE id = ?`,
+    [
+      name,
+      slug,
+      description || '',
+      status || 'active',
+      JSON.stringify(permissions || []),
+      new Date().toISOString(),
+      roleId
+    ]
+  );
+  return {
+    id: roleId,
+    name,
+    slug,
+    description,
+    status,
+    permissions: permissions || []
+  };
+}
+
+export async function deleteRoleInDb(roleId) {
+  const db = await getStoreDb();
+  await db.run(`DELETE FROM roles WHERE id = ? AND is_system = 0`, [roleId]);
+}
+
+export async function listPermissions() {
+  const db = await getStoreDb();
+  const rows = await db.all(`SELECT * FROM permissions ORDER BY module ASC, name ASC`);
+  return rows.map(r => ({
+    id: r.id,
+    module: r.module,
+    name: r.name,
+    description: r.description
+  }));
+}
+
+export async function createPermissionInDb({ id, module, name, description }) {
+  const db = await getStoreDb();
+  const now = new Date().toISOString();
+  await db.run(
+    `INSERT INTO permissions (id, module, name, description, created_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [id, module, name, description || '', now]
+  );
+  return { id, module, name, description };
 }

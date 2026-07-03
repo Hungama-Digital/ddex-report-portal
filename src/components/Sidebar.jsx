@@ -14,15 +14,25 @@ import {
   X,
   User
 } from 'lucide-react';
+import { usePermission } from '../hooks/usePermission';
 
 const Sidebar = ({ activePage, setActivePage, authUser, reportsNotificationCount = 0, onLogout, isOpen, onClose }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const { hasPermission } = usePermission();
 
   // Close mobile menu on page change
   const handlePageChange = (page) => {
     setActivePage(page);
     if (onClose) onClose();
   };
+
+  const showDashboard = hasPermission('dashboard.view');
+  const showAudioReports = hasPermission('audio-reports.view');
+  const showVideoReports = hasPermission('video-reports.view');
+  const showReports = hasPermission('reports.view');
+  const showSearch = hasPermission('search.view');
+  const showAdmin = hasPermission('users.view') || hasPermission('roles.view');
+  const showSettings = hasPermission('settings.view');
 
   return (
     <>
@@ -52,53 +62,62 @@ const Sidebar = ({ activePage, setActivePage, authUser, reportsNotificationCount
         </button>
 
         <nav className="sidebar-nav">
-          <button
-            className={`nav-item ${activePage === 'dashboard' ? 'active' : ''}`}
-            onClick={() => handlePageChange('dashboard')}
-          >
-            <LayoutDashboard size={20} />
-            <span className="nav-text">Dashboard</span>
-          </button>
+          {showDashboard && (
+            <button
+              className={`nav-item ${activePage === 'dashboard' ? 'active' : ''}`}
+              onClick={() => handlePageChange('dashboard')}
+            >
+              <LayoutDashboard size={20} />
+              <span className="nav-text">Dashboard</span>
+            </button>
+          )}
 
-          <button
-            className={`nav-item ${activePage === 'audio-reports' ? 'active' : ''}`}
-            onClick={() => handlePageChange('audio-reports')}
-          >
-            <Music size={20} />
-            <span className="nav-text">Audio Reports</span>
-          </button>
+          {showAudioReports && (
+            <button
+              className={`nav-item ${activePage === 'audio-reports' ? 'active' : ''}`}
+              onClick={() => handlePageChange('audio-reports')}
+            >
+              <Music size={20} />
+              <span className="nav-text">Audio Reports</span>
+            </button>
+          )}
 
-          <button
-            className={`nav-item ${activePage === 'video-reports' ? 'active' : ''}`}
-            onClick={() => handlePageChange('video-reports')}
-          >
-            <Video size={20} />
-            <span className="nav-text">Video Reports</span>
-          </button>
+          {showVideoReports && (
+            <button
+              className={`nav-item ${activePage === 'video-reports' ? 'active' : ''}`}
+              onClick={() => handlePageChange('video-reports')}
+            >
+              <Video size={20} />
+              <span className="nav-text">Video Reports</span>
+            </button>
+          )}
 
-          <button
-            className={`nav-item ${activePage === 'reports' ? 'active' : ''}`}
-            onClick={() => handlePageChange('reports')}
-          >
-            <Files size={20} />
-            <span className="nav-text">Reports</span>
-            {reportsNotificationCount > 0 ? (
-              <span className="admin-badge" title="New report/admin notifications">
-                <Bell size={12} /> {reportsNotificationCount}
-              </span>
-            ) : null}
-          </button>
+          {showReports && (
+            <button
+              className={`nav-item ${activePage === 'reports' ? 'active' : ''}`}
+              onClick={() => handlePageChange('reports')}
+            >
+              <Files size={20} />
+              <span className="nav-text">Reports</span>
+              {reportsNotificationCount > 0 ? (
+                <span className="admin-badge" title="New report/admin notifications">
+                  <Bell size={12} /> {reportsNotificationCount}
+                </span>
+              ) : null}
+            </button>
+          )}
 
-          <button
-            className={`nav-item ${activePage === 'search' ? 'active' : ''}`}
-            onClick={() => handlePageChange('search')}
-          >
-            <Search size={20} />
-            <span className="nav-text">Search Contents</span>
-          </button>
+          {showSearch && (
+            <button
+              className={`nav-item ${activePage === 'search' ? 'active' : ''}`}
+              onClick={() => handlePageChange('search')}
+            >
+              <Search size={20} />
+              <span className="nav-text">Search Contents</span>
+            </button>
+          )}
 
-
-          {authUser?.role === 'admin' ? (
+          {showAdmin && (
             <button
               className={`nav-item ${activePage === 'admin' ? 'active' : ''}`}
               onClick={() => handlePageChange('admin')}
@@ -106,15 +125,17 @@ const Sidebar = ({ activePage, setActivePage, authUser, reportsNotificationCount
               <Shield size={20} />
               <span className="nav-text">Admin</span>
             </button>
-          ) : null}
+          )}
 
-          <button
-            className={`nav-item ${activePage === 'settings' ? 'active' : ''}`}
-            onClick={() => handlePageChange('settings')}
-          >
-            <Settings size={20} />
-            <span className="nav-text">Settings</span>
-          </button>
+          {showSettings && (
+            <button
+              className={`nav-item ${activePage === 'settings' ? 'active' : ''}`}
+              onClick={() => handlePageChange('settings')}
+            >
+              <Settings size={20} />
+              <span className="nav-text">Settings</span>
+            </button>
+          )}
         </nav>
 
         <div className="sidebar-footer">

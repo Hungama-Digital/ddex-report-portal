@@ -2560,6 +2560,21 @@ tr:hover td {
   color: var(--success-color);
 }
 
+.type-pill.insert {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success-color);
+}
+
+.type-pill.update {
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--warning-color);
+}
+
+.type-pill.takedown {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger-color);
+}
+
 .type-pill.other {
   background: var(--bg-secondary);
   color: var(--text-secondary);
@@ -2572,11 +2587,7 @@ tr:hover td {
 
 .code-cell {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  background: var(--bg-secondary);
-  padding: 0.2rem 0.4rem;
-  border-radius: 4px;
   color: var(--text-primary);
-  border: 1px solid var(--border-color);
 }
 
 .status-pill {

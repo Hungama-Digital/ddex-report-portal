@@ -49,19 +49,19 @@ export async function requestAccess({ username, email }) {
   });
 }
 
-export async function setupPassword({ username, email, password }) {
+export async function setupPassword({ email, password }) {
   return apiFetch('/api/auth/setup-password', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, email, password }),
+    body: JSON.stringify({ email, password }),
   });
 }
 
-export async function login({ username, password }) {
+export async function login({ email, password }) {
   return apiFetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ email, password }),
   });
 }
 
@@ -105,9 +105,11 @@ export async function revokeAdminUser(userId) {
   });
 }
 
-export async function approvePendingUser(userId) {
+export async function approvePendingUser(userId, role) {
   return apiFetch(`/api/admin/approvals/${encodeURIComponent(userId)}/approve`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role }),
   });
 }
 
@@ -180,6 +182,7 @@ export async function fetchAudioPartnerTotalContentLive({
     metasea: Number(payload.metasea) || 0,
     partnerDb: Number(payload.partnerDb ?? payload.b2b) || 0,
     total: Number(payload.total) || 0,
+    albumCount: Number(payload.albumCount) || 0,
     partnerBreakdown: Array.isArray(payload.partnerBreakdown) ? payload.partnerBreakdown : [],
   };
 }
@@ -214,7 +217,9 @@ export async function fetchAudioPartnerPeriodMetrics({
     partner: payload.partner,
     retailerId: payload.retailerId,
     deliveredInPeriod: Number(payload.deliveredInPeriod) || 0,
+    deliveredAlbumsInPeriod: Number(payload.deliveredAlbumsInPeriod) || 0,
     takenDownInPeriod: Number(payload.takenDownInPeriod) || 0,
+    takenDownAlbumsInPeriod: Number(payload.takenDownAlbumsInPeriod) || 0,
     dateRange: payload.dateRange || null,
   };
 }
@@ -251,8 +256,11 @@ export async function fetchAudioPartnerSummary({
     metasea: Number(payload.metasea) || 0,
     partnerDb: Number(payload.partnerDb ?? payload.b2b) || 0,
     total: Number(payload.total) || 0,
+    albumCount: Number(payload.albumCount) || 0,
     deliveredInPeriod: Number(payload.deliveredInPeriod) || 0,
+    deliveredAlbumsInPeriod: Number(payload.deliveredAlbumsInPeriod) || 0,
     takenDownInPeriod: Number(payload.takenDownInPeriod) || 0,
+    takenDownAlbumsInPeriod: Number(payload.takenDownAlbumsInPeriod) || 0,
     dateRange: payload.dateRange || null,
   };
 }

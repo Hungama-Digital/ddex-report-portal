@@ -33,6 +33,19 @@ import {
   revokeUserAccess,
   rejectUser,
   setupUserPassword,
+  createUserInDb,
+  updateUserInDb,
+  deleteUserInDb,
+  resetUserPasswordInDb,
+  listAllUsers,
+  logUserActivity,
+  getUserActivities,
+  listRoles,
+  createRoleInDb,
+  updateRoleInDb,
+  deleteRoleInDb,
+  listPermissions,
+  createPermissionInDb,
 } from './services/localStore.js';
 import {
   deleteReportAndFiles,
@@ -60,7 +73,12 @@ if (API_DEBUG) {
 }
 
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', CORS_ORIGIN);
+  const origin = req.headers.origin;
+  if (origin && (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:'))) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else {
+    res.header('Access-Control-Allow-Origin', CORS_ORIGIN);
+  }
   res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization');
   if (req.method === 'OPTIONS') {
@@ -147,7 +165,6 @@ app.post('/api/auth/request-access', async (req, res, next) => {
 app.post('/api/auth/setup-password', async (req, res, next) => {
   try {
     await setupUserPassword({
-      username: req.body?.username,
       email: req.body?.email,
       password: req.body?.password,
     });
@@ -160,7 +177,7 @@ app.post('/api/auth/setup-password', async (req, res, next) => {
 app.post('/api/auth/login', async (req, res, next) => {
   try {
     const output = await loginUser({
-      username: req.body?.username,
+      email: req.body?.email,
       password: req.body?.password,
     });
     res.json(output);
@@ -172,7 +189,8 @@ app.post('/api/auth/login', async (req, res, next) => {
 app.use(authOptional);
 
 app.get('/api/auth/me', requireAuth, async (req, res) => {
-  const isAdmin = String(req.authUser.role || '').toLowerCase() === 'admin';
+  const role = String(req.authUser.role || '').toLowerCase();
+  const isAdmin = role === 'admin' || role === 'super-admin';
   const notifications = await listNotificationsForUser(req.authUser.id, {
     includeRead: false,
     limit: 200,
@@ -218,7 +236,8 @@ app.get('/api/notifications', requireAuth, async (req, res, next) => {
       limit,
       days,
     });
-    const isAdmin = String(req.authUser.role || '').toLowerCase() === 'admin';
+    const role = String(req.authUser.role || '').toLowerCase();
+    const isAdmin = role === 'admin' || role === 'super-admin';
     const filteredNotifications = isAdmin
       ? notifications
       : notifications.filter(
@@ -252,7 +271,8 @@ app.get('/api/notifications', requireAuth, async (req, res, next) => {
 app.post('/api/notifications/:id/read', requireAuth, async (req, res, next) => {
   try {
     await markNotificationRead(req.params.id, req.authUser.id);
-    const isAdmin = String(req.authUser.role || '').toLowerCase() === 'admin';
+    const role = String(req.authUser.role || '').toLowerCase();
+    const isAdmin = role === 'admin' || role === 'super-admin';
     const unreadRows = await listNotificationsForUser(req.authUser.id, {
       includeRead: false,
       limit: 200,
@@ -291,7 +311,7 @@ app.get('/api/admin/approvals', requireAdmin, async (_req, res, next) => {
 
 app.post('/api/admin/approvals/:id/approve', requireAdmin, async (req, res, next) => {
   try {
-    const output = await approveUser(req.params.id, req.authUser.id);
+    const output = await approveUser(req.params.id, req.authUser.id, req.body?.role);
     res.json({ ok: true, user: output.user });
   } catch (error) {
     next(error);
@@ -309,7 +329,7 @@ app.post('/api/admin/approvals/:id/reject', requireAdmin, async (req, res, next)
 
 app.get('/api/admin/users', requireAdmin, async (_req, res, next) => {
   try {
-    const rows = await listActiveUsers();
+    const rows = await listAllUsers();
     res.json({
       ok: true,
       rows: rows.map((row) => ({
@@ -322,8 +342,64 @@ app.get('/api/admin/users', requireAdmin, async (_req, res, next) => {
         status: row.status,
         createdAt: row.created_at,
         approvedAt: row.approved_at,
+        lastLogin: row.last_login,
       })),
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/admin/users', requireAdmin, async (req, res, next) => {
+  try {
+    const user = await createUserInDb({
+      username: req.body?.username || req.body?.name,
+      email: req.body?.email,
+      role: req.body?.role,
+      status: req.body?.status,
+    });
+    res.json({ ok: true, user });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put('/api/admin/users/:id', requireAdmin, async (req, res, next) => {
+  try {
+    const user = await updateUserInDb(req.params.id, {
+      username: req.body?.username || req.body?.name,
+      email: req.body?.email,
+      role: req.body?.role,
+      status: req.body?.status,
+    });
+    res.json({ ok: true, user });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/admin/users/:id', requireAdmin, async (req, res, next) => {
+  try {
+    await deleteUserInDb(req.params.id);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/admin/users/:id/reset-password', requireAdmin, async (req, res, next) => {
+  try {
+    await resetUserPasswordInDb(req.params.id, req.body?.password);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/admin/users/:id/activities', requireAdmin, async (req, res, next) => {
+  try {
+    const activities = await getUserActivities(req.params.id);
+    res.json({ ok: true, activities });
   } catch (error) {
     next(error);
   }
@@ -333,6 +409,76 @@ app.post('/api/admin/users/:id/revoke', requireAdmin, async (req, res, next) => 
   try {
     const output = await revokeUserAccess(req.params.id);
     res.json(output);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/admin/roles', requireAdmin, async (_req, res, next) => {
+  try {
+    const roles = await listRoles();
+    res.json(roles);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/admin/roles', requireAdmin, async (req, res, next) => {
+  try {
+    const role = await createRoleInDb({
+      name: req.body?.name,
+      description: req.body?.description,
+      status: req.body?.status,
+      permissions: req.body?.permissions
+    });
+    res.json(role);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put('/api/admin/roles/:id', requireAdmin, async (req, res, next) => {
+  try {
+    const role = await updateRoleInDb(req.params.id, {
+      name: req.body?.name,
+      slug: req.body?.slug,
+      description: req.body?.description,
+      status: req.body?.status,
+      permissions: req.body?.permissions
+    });
+    res.json(role);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/admin/roles/:id', requireAdmin, async (req, res, next) => {
+  try {
+    await deleteRoleInDb(req.params.id);
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/admin/permissions', requireAdmin, async (_req, res, next) => {
+  try {
+    const permissions = await listPermissions();
+    res.json(permissions);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/admin/permissions', requireAdmin, async (req, res, next) => {
+  try {
+    const permission = await createPermissionInDb({
+      id: req.body?.id,
+      module: req.body?.module,
+      name: req.body?.name,
+      description: req.body?.description
+    });
+    res.json(permission);
   } catch (error) {
     next(error);
   }
@@ -363,6 +509,11 @@ app.post('/api/reports/jobs/export', requireAuth, async (req, res, next) => {
       source: req.body?.source,
       createdByUserId: req.authUser.id,
     });
+    await logUserActivity(
+      req.authUser.id,
+      'Export job queued',
+      `Queued export job for partner: ${req.body?.partner}, source: ${req.body?.source}`,
+    );
     res.json({ ok: true, ...output });
   } catch (error) {
     next(error);
@@ -375,6 +526,11 @@ app.post('/api/reports/jobs/difference', requireAuth, async (req, res, next) => 
       reportIds: req.body?.reportIds,
       createdByUserId: req.authUser.id,
     });
+    await logUserActivity(
+      req.authUser.id,
+      'Difference job queued',
+      `Queued comparison for report IDs: ${(req.body?.reportIds || []).join(', ')}`,
+    );
     res.json({ ok: true, ...output });
   } catch (error) {
     next(error);
@@ -389,6 +545,13 @@ app.get('/api/reports/:id/download', requireAuth, async (req, res, next) => {
       error.statusCode = 404;
       throw error;
     }
+
+    const partnerName = String(report.partner_label || report.partner || 'DDEX');
+    await logUserActivity(
+      req.authUser.id,
+      `Downloaded ${partnerName} Report`,
+      `Downloaded file: ${report.file_name}`,
+    );
 
     res.download(path.resolve(report.file_path), report.file_name);
   } catch (error) {

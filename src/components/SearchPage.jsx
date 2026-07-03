@@ -38,6 +38,24 @@ function formatStatus(raw) {
   return STATUS_LABELS[num] ?? raw;
 }
 
+const DDEX_TYPE_LABELS = {
+  AUDIO_ALBUM_INSERT: 'INSERT',
+  AUDIO_ALBUM_UPDATE: 'UPDATE',
+  AUDIO_ALBUM_TAKEDOWN: 'TAKEDOWN',
+};
+
+function formatDdexType(raw) {
+  if (!raw) return '-';
+  return DDEX_TYPE_LABELS[raw] ?? raw;
+}
+
+function getDdexTypeClass(raw) {
+  if (!raw) return 'other';
+  const cleanType = raw.toLowerCase().replace(/_/g, '-');
+  const shortType = DDEX_TYPE_LABELS[raw] ? DDEX_TYPE_LABELS[raw].toLowerCase() : '';
+  return `${cleanType} ${shortType}`.trim();
+}
+
 const SEARCH_TYPE_OPTIONS = [
   { value: 'all', label: 'All Identifiers' },
   { value: 'upc', label: 'UPC' },
@@ -179,8 +197,8 @@ const SearchPage = ({ addToast }) => {
                     <td className="code-cell">{item.upc || '-'}</td>
                     <td className="code-cell">{item.batchId || '-'}</td>
                     <td>
-                      <span className={`type-pill ${(item.ddexType || '').toLowerCase().replace(/_/g, '-')}`}>
-                        {item.ddexType || '-'}
+                      <span className={`type-pill ${getDdexTypeClass(item.ddexType)}`}>
+                        {formatDdexType(item.ddexType)}
                       </span>
                     </td>
                     <td>{formatStatus(item.status)}</td>

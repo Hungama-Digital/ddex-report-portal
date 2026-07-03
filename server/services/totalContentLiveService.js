@@ -387,7 +387,9 @@ async function queryPartnerDbTotalTracks({ contents, push }) {
   const contentsTable = escapeMysqlIdentifier(contents);
   const pushTable = escapeMysqlIdentifier(push);
   const sql = `
-    SELECT COALESCE(SUM(live.track_count), 0) AS total_track_count
+    SELECT
+      COALESCE(SUM(live.track_count), 0) AS total_track_count,
+      COUNT(*) AS total_album_count
     FROM (
       SELECT
         c.ALBUM_ID,
@@ -421,15 +423,16 @@ async function queryPartnerDbTotalTracks({ contents, push }) {
     TOTAL_LIVE_PARTNERDB_QUERY_TIMEOUT_MS + 1500,
     `Partner-db total-content-live (${contents})`,
   );
-  const rawCount = rows?.[0]?.total_track_count ?? 0;
-  const count = Number(rawCount) || 0;
+  const trackCount = Number(rows?.[0]?.total_track_count ?? 0) || 0;
+  const albumCount = Number(rows?.[0]?.total_album_count ?? 0) || 0;
   logDebug("Partner-db total-content-live query completed", {
     contentsTable: contents,
     pushTable: push,
-    count,
+    trackCount,
+    albumCount,
     durationMs: Date.now() - startedAt,
   });
-  return count;
+  return { trackCount, albumCount };
 }
 
 async function queryPartnerDbDeliveredTracks({ tables, bounds }) {
@@ -444,7 +447,9 @@ async function queryPartnerDbDeliveredTracks({ tables, bounds }) {
   });
 
   const sql = `
-    SELECT COALESCE(SUM(JSON_LENGTH(d.TRACK_IDS)), 0) AS delivered_track_count
+    SELECT
+      COALESCE(SUM(JSON_LENGTH(d.TRACK_IDS)), 0) AS delivered_track_count,
+      COUNT(*) AS delivered_album_count
     FROM (
       SELECT u.TRACK_IDS
       FROM ${contentsTable} u
@@ -602,14 +607,15 @@ async function queryPartnerDbDeliveredTracks({ tables, bounds }) {
 
   const b2bPool = getB2BPool();
   const [rows] = await b2bPool.query(sql, params);
-  const rawCount = rows?.[0]?.delivered_track_count ?? 0;
-  const count = Number(rawCount) || 0;
+  const trackCount = Number(rows?.[0]?.delivered_track_count ?? 0) || 0;
+  const albumCount = Number(rows?.[0]?.delivered_album_count ?? 0) || 0;
   logDebug("Partner-db delivered-in-period query completed", {
     contentsTable: tables.contents,
-    count,
+    trackCount,
+    albumCount,
     durationMs: Date.now() - startedAt,
   });
-  return count;
+  return { trackCount, albumCount };
 }
 
 async function queryPartnerDbTakenDownTracks({ tables, bounds }) {
@@ -624,7 +630,9 @@ async function queryPartnerDbTakenDownTracks({ tables, bounds }) {
   });
 
   const sql = `
-    SELECT COALESCE(SUM(JSON_LENGTH(d.TRACK_IDS)), 0) AS takedown_track_count
+    SELECT
+      COALESCE(SUM(JSON_LENGTH(d.TRACK_IDS)), 0) AS takedown_track_count,
+      COUNT(*) AS takedown_album_count
     FROM (
       SELECT t.TRACK_IDS
       FROM ${contentsTable} t
@@ -691,14 +699,15 @@ async function queryPartnerDbTakenDownTracks({ tables, bounds }) {
 
   const b2bPool = getB2BPool();
   const [rows] = await b2bPool.query(sql, params);
-  const rawCount = rows?.[0]?.takedown_track_count ?? 0;
-  const count = Number(rawCount) || 0;
+  const trackCount = Number(rows?.[0]?.takedown_track_count ?? 0) || 0;
+  const albumCount = Number(rows?.[0]?.takedown_album_count ?? 0) || 0;
   logDebug("Partner-db takedown-in-period query completed", {
     contentsTable: tables.contents,
-    count,
+    trackCount,
+    albumCount,
     durationMs: Date.now() - startedAt,
   });
-  return count;
+  return { trackCount, albumCount };
 }
 
 async function queryPartnerDbLiveRows({ partnerKey, tables, limit }) {
@@ -1114,7 +1123,8 @@ async function executeTotalContentLive(config) {
 
   const metaseaCount =
     metaseaResult.status === "fulfilled" ? metaseaResult.value : 0;
-  const partnerDbCount = partnerDbResult.value;
+  const partnerDbCount = partnerDbResult.value.trackCount;
+  const albumCount = partnerDbResult.value.albumCount;
   const payload = {
     partner: config.partnerKey,
     retailerId: config.retailerId,
@@ -1122,6 +1132,7 @@ async function executeTotalContentLive(config) {
     partnerDb: partnerDbCount,
     b2b: partnerDbCount,
     total: partnerDbCount,
+    albumCount,
     partnerDbTables: config.partnerDbTables,
   };
 
@@ -1130,6 +1141,7 @@ async function executeTotalContentLive(config) {
     retailerId: config.retailerId,
     metasea: metaseaCount,
     partnerDb: partnerDbCount,
+    albumCount,
     total: partnerDbCount,
   });
   return payload;
@@ -1187,9 +1199,10 @@ async function executeAllPartnersTotalContentLive({ bypassCache = false } = {}) 
     (acc, item) => {
       acc.metasea += Number(item.metasea) || 0;
       acc.partnerDb += Number(item.partnerDb) || 0;
+      acc.albumCount += Number(item.albumCount) || 0;
       return acc;
     },
-    { metasea: 0, partnerDb: 0 },
+    { metasea: 0, partnerDb: 0, albumCount: 0 },
   );
 
   const payload = {
@@ -1199,6 +1212,7 @@ async function executeAllPartnersTotalContentLive({ bypassCache = false } = {}) 
     partnerDb: aggregate.partnerDb,
     b2b: aggregate.partnerDb,
     total: aggregate.partnerDb,
+    albumCount: aggregate.albumCount,
     partnerBreakdown: successful.map((item) => ({
       partner: item.partner,
       retailerId: item.retailerId,
@@ -1206,6 +1220,7 @@ async function executeAllPartnersTotalContentLive({ bypassCache = false } = {}) 
       partnerDb: Number(item.partnerDb) || 0,
       b2b: Number(item.partnerDb) || 0,
       total: Number(item.partnerDb) || 0,
+      albumCount: Number(item.albumCount) || 0,
       partnerDbTables: item.partnerDbTables,
     })),
   };
@@ -1214,6 +1229,7 @@ async function executeAllPartnersTotalContentLive({ bypassCache = false } = {}) 
     partnerCount: payload.partnerBreakdown.length,
     metasea: payload.metasea,
     partnerDb: payload.partnerDb,
+    albumCount: payload.albumCount,
     total: payload.total,
   });
 
@@ -1340,8 +1356,10 @@ async function executeAudioPartnerSummary(config, bounds) {
       from: bounds.startDateTime,
       toExclusive: bounds.endExclusiveDateTime,
     },
-    deliveredInPeriod: deliveredResult.value,
-    takenDownInPeriod: takenDownResult.value,
+    deliveredInPeriod: deliveredResult.value.trackCount,
+    deliveredAlbumsInPeriod: deliveredResult.value.albumCount,
+    takenDownInPeriod: takenDownResult.value.trackCount,
+    takenDownAlbumsInPeriod: takenDownResult.value.albumCount,
   };
 }
 
@@ -1385,11 +1403,22 @@ async function executeAllPartnersSummary({ bounds, bypassCache = false } = {}) {
     (acc, item) => {
       acc.metasea += Number(item.metasea) || 0;
       acc.partnerDb += Number(item.partnerDb) || 0;
+      acc.albumCount += Number(item.albumCount) || 0;
       acc.deliveredInPeriod += Number(item.deliveredInPeriod) || 0;
+      acc.deliveredAlbumsInPeriod += Number(item.deliveredAlbumsInPeriod) || 0;
       acc.takenDownInPeriod += Number(item.takenDownInPeriod) || 0;
+      acc.takenDownAlbumsInPeriod += Number(item.takenDownAlbumsInPeriod) || 0;
       return acc;
     },
-    { metasea: 0, partnerDb: 0, deliveredInPeriod: 0, takenDownInPeriod: 0 }
+    {
+      metasea: 0,
+      partnerDb: 0,
+      albumCount: 0,
+      deliveredInPeriod: 0,
+      deliveredAlbumsInPeriod: 0,
+      takenDownInPeriod: 0,
+      takenDownAlbumsInPeriod: 0,
+    }
   );
 
   return {
@@ -1399,8 +1428,11 @@ async function executeAllPartnersSummary({ bounds, bypassCache = false } = {}) {
     partnerDb: aggregate.partnerDb,
     b2b: aggregate.partnerDb,
     total: aggregate.partnerDb,
+    albumCount: aggregate.albumCount,
     deliveredInPeriod: aggregate.deliveredInPeriod,
+    deliveredAlbumsInPeriod: aggregate.deliveredAlbumsInPeriod,
     takenDownInPeriod: aggregate.takenDownInPeriod,
+    takenDownAlbumsInPeriod: aggregate.takenDownAlbumsInPeriod,
     dateRange: {
       from: bounds.startDateTime,
       toExclusive: bounds.endExclusiveDateTime,
@@ -1509,8 +1541,10 @@ async function executeAudioPartnerPeriodMetrics(config, bounds) {
       from: bounds.startDateTime,
       toExclusive: bounds.endExclusiveDateTime,
     },
-    deliveredInPeriod: deliveredResult.value,
-    takenDownInPeriod: takenDownResult.value,
+    deliveredInPeriod: deliveredResult.value.trackCount,
+    deliveredAlbumsInPeriod: deliveredResult.value.albumCount,
+    takenDownInPeriod: takenDownResult.value.trackCount,
+    takenDownAlbumsInPeriod: takenDownResult.value.albumCount,
   };
 }
 
@@ -1544,17 +1578,26 @@ async function executeAllPartnersPeriodMetrics({ bounds, bypassCache = false } =
   const aggregate = successful.reduce(
     (acc, item) => {
       acc.deliveredInPeriod += Number(item.deliveredInPeriod) || 0;
+      acc.deliveredAlbumsInPeriod += Number(item.deliveredAlbumsInPeriod) || 0;
       acc.takenDownInPeriod += Number(item.takenDownInPeriod) || 0;
+      acc.takenDownAlbumsInPeriod += Number(item.takenDownAlbumsInPeriod) || 0;
       return acc;
     },
-    { deliveredInPeriod: 0, takenDownInPeriod: 0 }
+    {
+      deliveredInPeriod: 0,
+      deliveredAlbumsInPeriod: 0,
+      takenDownInPeriod: 0,
+      takenDownAlbumsInPeriod: 0,
+    }
   );
 
   return {
     partner: "all",
     retailerId: null,
     deliveredInPeriod: aggregate.deliveredInPeriod,
+    deliveredAlbumsInPeriod: aggregate.deliveredAlbumsInPeriod,
     takenDownInPeriod: aggregate.takenDownInPeriod,
+    takenDownAlbumsInPeriod: aggregate.takenDownAlbumsInPeriod,
     dateRange: {
       from: bounds.startDateTime,
       toExclusive: bounds.endExclusiveDateTime,

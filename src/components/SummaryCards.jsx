@@ -46,9 +46,15 @@ const SummaryCards = ({
   const deliveredCount = isDashboard
     ? getAggregated('deliveredThisMonth')
     : (stats?.deliveredThisMonth ?? 0);
+  const deliveredAlbumsCount = isDashboard
+    ? getAggregated('deliveredAlbums')
+    : (stats?.deliveredAlbumsThisMonth ?? 0);
   const takenDownCount = isDashboard
     ? getAggregated('takenDownThisMonth')
     : (stats?.takenDownThisMonth ?? 0);
+  const takenDownAlbumsCount = isDashboard
+    ? getAggregated('takenDownAlbums')
+    : (stats?.takenDownAlbumsThisMonth ?? 0);
 
   const liveMetaseaCount = Number(liveBreakdown?.metasea) || 0;
   const livePartnerDbCount = Number(liveBreakdown?.partnerDb) || 0;
@@ -107,8 +113,19 @@ const SummaryCards = ({
     if (periodLoading) {
       return renderLoadingValue();
     }
-    const value = key === 'deliveredThisMonth' ? deliveredCount : takenDownCount;
-    return <span className="metric-value-large">{formatCount(value)}</span>;
+    const trackValue = key === 'deliveredThisMonth' ? deliveredCount : takenDownCount;
+    const albumValue = key === 'deliveredThisMonth' ? deliveredAlbumsCount : takenDownAlbumsCount;
+    return (
+      <div className="metric-value-compound">
+        <span className="metric-value-large">
+          {formatCount(albumValue)}<span className="metric-unit-label">Albums</span>
+        </span>
+        <span className="metric-compound-divider">/</span>
+        <span className="metric-value-large">
+          {formatCount(trackValue)}<span className="metric-unit-label">Tracks</span>
+        </span>
+      </div>
+    );
   };
 
   const renderPeriodMiniChart = ({ label, count, strokeColor, gradientId }) => {

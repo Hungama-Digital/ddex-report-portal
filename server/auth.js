@@ -56,7 +56,8 @@ export function requireAdmin(req, _res, next) {
     error.statusCode = 401;
     return next(error);
   }
-  if (req.authUser.role !== 'admin') {
+  const role = String(req.authUser.role || '').toLowerCase();
+  if (role !== 'admin' && role !== 'super-admin') {
     const error = new Error('Admin access required.');
     error.statusCode = 403;
     return next(error);

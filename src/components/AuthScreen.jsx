@@ -5,9 +5,9 @@ import { login, requestAccess, setupPassword } from '../services/metricsApi';
 const AuthScreen = ({ onAuthenticated }) => {
   const [tab, setTab] = useState('login');
   const [status, setStatus] = useState({ loading: false, message: '', error: '' });
-  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [requestForm, setRequestForm] = useState({ username: '', email: '' });
-  const [passwordForm, setPasswordForm] = useState({ username: '', email: '', password: '' });
+  const [passwordForm, setPasswordForm] = useState({ email: '', password: '' });
 
   const runAction = async (action) => {
     setStatus({ loading: true, message: '', error: '' });
@@ -64,13 +64,14 @@ const AuthScreen = ({ onAuthenticated }) => {
           {tab === 'login' && (
             <form onSubmit={handleLogin} className="auth-form">
               <div className="auth-input-group">
-                <label><User size={14} /> Username</label>
+                <label><Mail size={14} /> Email</label>
                 <div className="input-wrapper">
-                  <User className="field-icon" size={18} />
+                  <Mail className="field-icon" size={18} />
                   <input
-                    placeholder="Enter your username"
-                    value={loginForm.username}
-                    onChange={(event) => setLoginForm((prev) => ({ ...prev, username: event.target.value }))}
+                    type="email"
+                    placeholder="Enter your email"
+                    value={loginForm.email}
+                    onChange={(event) => setLoginForm((prev) => ({ ...prev, email: event.target.value }))}
                     required
                   />
                 </div>
@@ -97,11 +98,11 @@ const AuthScreen = ({ onAuthenticated }) => {
           {tab === 'request' && (
             <form onSubmit={handleAccessRequest} className="auth-form">
               <div className="auth-input-group">
-                <label><User size={14} /> Username</label>
+                <label><User size={14} /> Name</label>
                 <div className="input-wrapper">
                   <User className="field-icon" size={18} />
                   <input
-                    placeholder="Preferred username"
+                    placeholder="Enter your name"
                     value={requestForm.username}
                     onChange={(event) => setRequestForm((prev) => ({ ...prev, username: event.target.value }))}
                     required
@@ -129,18 +130,6 @@ const AuthScreen = ({ onAuthenticated }) => {
 
           {tab === 'setup' && (
             <form onSubmit={handlePasswordSetup} className="auth-form">
-              <div className="auth-input-group">
-                <label><User size={14} /> Username</label>
-                <div className="input-wrapper">
-                  <User className="field-icon" size={18} />
-                  <input
-                    placeholder="Enter your username"
-                    value={passwordForm.username}
-                    onChange={(event) => setPasswordForm((prev) => ({ ...prev, username: event.target.value }))}
-                    required
-                  />
-                </div>
-              </div>
               <div className="auth-input-group">
                 <label><Mail size={14} /> Email</label>
                 <div className="input-wrapper">

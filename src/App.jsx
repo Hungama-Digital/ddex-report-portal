@@ -8,7 +8,10 @@ import DashboardCharts from './components/DashboardCharts';
 import Sidebar from './components/Sidebar';
 import AuthScreen from './components/AuthScreen';
 import ReportsPage from './components/ReportsPage';
-import AdminPage from './components/AdminPage';
+import AdminDashboard from './modules/admin/AdminDashboard';
+import { useDispatch, useSelector } from 'react-redux';
+import { authStart, authSuccess, authFailure, authInitialized, logout as logoutRedux } from './store/authSlice';
+import rolesService from './services/roles.service';
 import SearchPage from './components/SearchPage';
 import ConfirmDialog from './components/ConfirmDialog';
 import NotificationToasts from './components/NotificationToasts';
@@ -44,6 +47,7 @@ const EMPTY_AUDIO_SUMMARY = {
   metasea: 0,
   partnerDb: 0,
   total: 0,
+  albumCount: 0,
   deliveredInPeriod: 0,
   takenDownInPeriod: 0,
 };
@@ -67,7 +71,9 @@ const EMPTY_AUDIO_PERIOD_METRICS = {
   status: 'idle',
   error: null,
   deliveredInPeriod: 0,
+  deliveredAlbumsInPeriod: 0,
   takenDownInPeriod: 0,
+  takenDownAlbumsInPeriod: 0,
 };
 
 const NOTIFICATION_POLL_INTERVAL_MS = 60000;
@@ -113,8 +119,10 @@ function App() {
     }
   }, [startDate, endDate, setEndDate]);
 
-  const [authUser, setAuthUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const dispatch = useDispatch();
+  const reduxAuth = useSelector((state) => state.auth);
+  const authUser = reduxAuth.user;
+  const authLoading = reduxAuth.loading || !reduxAuth.initialized;
 
   const [audioSummary, setAudioSummary] = useState(EMPTY_AUDIO_SUMMARY);
   const [audioPeriodMetrics, setAudioPeriodMetrics] = useState(EMPTY_AUDIO_PERIOD_METRICS);
@@ -159,29 +167,62 @@ function App() {
     const bootstrap = async () => {
       const token = window.localStorage.getItem('ddex_auth_token');
       if (!token) {
-        setAuthLoading(false);
+        dispatch(authInitialized());
         return;
       }
 
+      dispatch(authStart());
       try {
         const me = await fetchMe();
-        setAuthUser(me.user);
+        const roles = await rolesService.getRoles();
+        const userRole = roles.find(
+          (r) => r.id === me.user.role || r.name.toLowerCase() === String(me.user.role).toLowerCase()
+        );
+        const perms = userRole ? userRole.permissions : [];
+
+        dispatch(authSuccess({
+          user: me.user,
+          token: token,
+          permissions: perms
+        }));
+
         setNotificationsState((prev) => ({ ...prev, unreadCount: Number(me.unreadNotifications) || 0 }));
         notificationToastReadyAtRef.current = Date.now() + NOTIFICATION_TOAST_QUIET_PERIOD_MS;
       } catch (_error) {
         window.localStorage.removeItem('ddex_auth_token');
-        setAuthUser(null);
+        dispatch(logoutRedux());
       } finally {
-        setAuthLoading(false);
+        dispatch(authInitialized());
       }
     };
 
     bootstrap();
-  }, []);
+  }, [dispatch]);
 
-  const handleAuthenticated = (user) => {
-    setAuthUser(user);
-    setAuthLoading(false);
+  const handleAuthenticated = async (user) => {
+    dispatch(authStart());
+    try {
+      const token = window.localStorage.getItem('ddex_auth_token') || 'mock-token';
+      const roles = await rolesService.getRoles();
+      const userRole = roles.find(
+        (r) => r.id === user.role || r.name.toLowerCase() === String(user.role).toLowerCase()
+      );
+      const perms = userRole ? userRole.permissions : [];
+
+      dispatch(authSuccess({
+        user: user,
+        token: token,
+        permissions: perms
+      }));
+    } catch (err) {
+      console.error(err);
+      dispatch(authSuccess({
+        user: user,
+        token: window.localStorage.getItem('ddex_auth_token') || 'mock-token',
+        permissions: []
+      }));
+    }
+    
     notificationsBootstrappedRef.current = false;
     seenNotificationRef.current = new Set();
     notificationToastReadyAtRef.current = Date.now() + NOTIFICATION_TOAST_QUIET_PERIOD_MS;
@@ -194,7 +235,7 @@ function App() {
       // silent
     }
     window.localStorage.removeItem('ddex_auth_token');
-    setAuthUser(null);
+    dispatch(logoutRedux());
     setNotificationsState({ unreadCount: 0, rows: [] });
     setApprovalsState({ loading: false, rows: [] });
     setAdminUsersState({ loading: false, rows: [] });
@@ -439,7 +480,7 @@ function App() {
         isLiveData: true,
         metasea: audioSummary.metasea,
         partnerDb: audioSummary.partnerDb,
-        albumCount: audioDetailsRowsState.status === 'success' ? audioDetailsRowsState.rows.length : null,
+        albumCount: audioSummary.albumCount,
       }
     : null;
 
@@ -488,6 +529,7 @@ function App() {
           metasea: Number(summary.metasea) || 0,
           partnerDb: Number(summary.partnerDb) || 0,
           total: Number(summary.total) || 0,
+          albumCount: Number(summary.albumCount) || 0,
           deliveredInPeriod: 0,
           takenDownInPeriod: 0,
         });
@@ -523,7 +565,9 @@ function App() {
       status: 'loading',
       error: null,
       deliveredInPeriod: 0,
+      deliveredAlbumsInPeriod: 0,
       takenDownInPeriod: 0,
+      takenDownAlbumsInPeriod: 0,
     });
 
     const periodPromise = isAllAudioPartnersSelected
@@ -547,9 +591,11 @@ function App() {
           return results.reduce(
             (acc, r) => ({
               deliveredInPeriod: acc.deliveredInPeriod + (Number(r?.deliveredInPeriod) || 0),
+              deliveredAlbumsInPeriod: acc.deliveredAlbumsInPeriod + (Number(r?.deliveredAlbumsInPeriod) || 0),
               takenDownInPeriod: acc.takenDownInPeriod + (Number(r?.takenDownInPeriod) || 0),
+              takenDownAlbumsInPeriod: acc.takenDownAlbumsInPeriod + (Number(r?.takenDownAlbumsInPeriod) || 0),
             }),
-            { deliveredInPeriod: 0, takenDownInPeriod: 0 },
+            { deliveredInPeriod: 0, deliveredAlbumsInPeriod: 0, takenDownInPeriod: 0, takenDownAlbumsInPeriod: 0 },
           );
         })()
       : fetchAudioPartnerPeriodMetrics({
@@ -570,7 +616,9 @@ function App() {
           status: 'success',
           error: null,
           deliveredInPeriod: Number(summary.deliveredInPeriod) || 0,
+          deliveredAlbumsInPeriod: Number(summary.deliveredAlbumsInPeriod) || 0,
           takenDownInPeriod: Number(summary.takenDownInPeriod) || 0,
+          takenDownAlbumsInPeriod: Number(summary.takenDownAlbumsInPeriod) || 0,
         });
       })
       .catch((error) => {
@@ -582,7 +630,9 @@ function App() {
           status: 'error',
           error: error?.message || 'Unable to load date-range metrics.',
           deliveredInPeriod: 0,
+          deliveredAlbumsInPeriod: 0,
           takenDownInPeriod: 0,
+          takenDownAlbumsInPeriod: 0,
         });
       });
 
@@ -803,7 +853,9 @@ function App() {
   const stats = {
     totalLive: shouldUseDbMetricsForAudio ? audioSummary.total : 0,
     deliveredThisMonth: isAudioPeriodReady ? audioPeriodMetrics.deliveredInPeriod : 0,
+    deliveredAlbumsThisMonth: isAudioPeriodReady ? audioPeriodMetrics.deliveredAlbumsInPeriod : 0,
     takenDownThisMonth: isAudioPeriodReady ? audioPeriodMetrics.takenDownInPeriod : 0,
+    takenDownAlbumsThisMonth: isAudioPeriodReady ? audioPeriodMetrics.takenDownAlbumsInPeriod : 0,
   };
 
   const dashboardStats = useMemo(() => {
@@ -811,12 +863,16 @@ function App() {
       audio: {
         totalLive: 0,
         deliveredThisMonth: 0,
+        deliveredAlbums: 0,
         takenDownThisMonth: 0,
+        takenDownAlbums: 0,
       },
       video: {
         totalLive: 0,
         deliveredThisMonth: 0,
+        deliveredAlbums: 0,
         takenDownThisMonth: 0,
+        takenDownAlbums: 0,
       },
     };
 
@@ -829,7 +885,9 @@ function App() {
       audio: {
         totalLive: audioSummary.total,
         deliveredThisMonth: isAudioPeriodReady ? audioPeriodMetrics.deliveredInPeriod : 0,
+        deliveredAlbums: isAudioPeriodReady ? audioPeriodMetrics.deliveredAlbumsInPeriod : 0,
         takenDownThisMonth: isAudioPeriodReady ? audioPeriodMetrics.takenDownInPeriod : 0,
+        takenDownAlbums: isAudioPeriodReady ? audioPeriodMetrics.takenDownAlbumsInPeriod : 0,
       },
     };
   }, [
@@ -837,7 +895,9 @@ function App() {
     audioSummary.total,
     isAudioPeriodReady,
     audioPeriodMetrics.deliveredInPeriod,
+    audioPeriodMetrics.deliveredAlbumsInPeriod,
     audioPeriodMetrics.takenDownInPeriod,
+    audioPeriodMetrics.takenDownAlbumsInPeriod,
   ]);
 
   const shouldUseLiveRecentDeliveries =
@@ -1423,15 +1483,8 @@ function App() {
             onDownloadReport={handleDownloadReport}
             onDeleteReport={handleDeleteReport}
           />
-        ) : activePage === 'admin' && authUser.role === 'admin' ? (
-          <AdminPage
-            rows={approvalsState.rows}
-            loading={approvalsState.loading || adminUsersState.loading}
-            activeUsers={adminUsersState.rows}
-            onApprove={handleApproveUser}
-            onReject={handleRejectUser}
-            onRevoke={handleRevokeUser}
-          />
+        ) : activePage === 'admin' ? (
+          <AdminDashboard />
         ) : activePage === 'search' ? (
           <SearchPage addToast={addToast} />
         ) : (
